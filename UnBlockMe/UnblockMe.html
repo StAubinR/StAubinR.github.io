@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>:: UnblockMe Player Solver Generator::</title> 
+    <style>
+      #board      { width:600px; height:600px;}
+      #editBlocks { display: none;  width:400px; height:300px;}
+      #main { position: relative;}
+      #editBorder { width: 100%; height: 100%; border: 2px solid black;}
+      #board div  { width: 100%; border: 2px solid black;}
+      #board #bTop {height: 200px; border-bottom: none;}
+      #board #bMid {height: 100px; border-bottom: none;
+                    border-top: none; border-right: none;}
+      #board #bBot {height: 300px; border-top: none;}
+      #board img, #editBlocks img {position: absolute; padding: 5px;}
+      #board, #right, #editBlocks, #msg {float: left;}
+      #right { margin-left: 20px;}
+      #msg { height: 295px;}
+      #msg, textarea, button {margin-top: 5px;}
+      #msg, #editBlocks { clear: both;}
+    </style>
+  <head>
+  <body onload="start()">
+    <h3>:: UnblockMe Player Solver ::</h3>
+    <div id="buttons">
+      <button id="edit"    onclick="editBoard()"> Edit</button>
+      <button id="tips"    onclick="tipsBoard()"> Hide Tips</button>
+      <button id="check"   onclick="analyzeBoard()">Analyze</button>
+      <button id="clear"   onclick="clearBoard()">Clear</button>
+      <button id="newEasy" onclick="newEasy()">   New Game</button>
+      <button id="save"    onclick="saveBoard()"> Save</button>
+      <button id="load"    onclick="loadBoard()"> Load</button>
+    </div>
+    <div id="main">
+      <div id="board">
+        <div id="bTop"></div>
+        <div id="bMid"></div>
+        <div id="bBot"></div>
+      </div>
+      <div id="right">
+        <div id="msg">
+        </div>
+        <div id="editBlocks">
+          <div id="editBorder"></div>
+        </div>
+      </div>
+    </div>
+  </body>
+  <script>
+// Dimension of each block type 0=1 line x 2 col, 1=1Lx3C, 2=2Lx1C,  3=3Lx1C
+"use struct";
+const br      = "<br>";
+const yDim    = [1,1,2,3];
+const xDim    = [2,3,1,1];
+const inc1Bl  = [1,1,6,6];               // a block is at [bp, bp+i1, bp+i2]
+const inc2Bl  = [1,2,6,12];              // next second place for this block
+const end1Bl  = [2,3,12,18];             // Next space after this block
+const hvBl    = [true,true,false,false]; // True for horizontal block
+const delBlk  = null;                   
+var graph     = [];
+var blocks    = [];
+var digMax    = 1000000;
+var digCount  = digMax;
+var lvlMax    = 50000;
+var lvlCount  = 0;
+var nodeMax   = 100000;
+var nodeCount = 0;
+var winCount  = 0;
+var pathLen   = 0;
+var editMode  = false;
+var tipsMode  = true;
+var firstEdit = true;
+// Move block
+function movableDiv(div, bt, bn, bp, sTop, sLeft) {
+  var min, max, top, left, deltaX, deltaY, minTop, minLeft, maxTop, maxLeft;
+  function mouseDown(ev) {
+    top  = sTop;
+    left = sLeft;
+    deltaX  = div.offsetLeft-ev.clientX;
+    deltaY  = div.offsetTop -ev.clientY;
+    if (editMode) {
+      minTop  = 0;
+      minLeft = 0;
+      maxTop  =  600 - 100*yDim[bt];
+      maxLeft = 1025 - 100*xDim[bt];
+      window.addEventListener("mousemove", moveFreeDiv);
+      window.addEventListener("mouseup", moveFreeUp);
+    } else {
+      var minMax = minMaxPos(bp, bt, blocks);
+      if (bt<2) {
+        min  = 100*(minMax[0]%6);
+        max  = 100*(minMax[1]%6);
+        window.addEventListener("mousemove", moveHoDiv);
+      } else {
+        min  = 100*Math.floor(minMax[0]/6);
+        max  = 100*Math.floor(minMax[1]/6);
+        window.addEventListener("mousemove", moveVeDiv);
+      }
+      window.addEventListener("mouseup", mouseUp);
+    }
+  }
+  function mouseUp() {
+    var line, col;
+    if (bt<2) {
+      line = (bp-bp%6)/6;
+      col  = Math.round(left/100);
+      left = 100*col;
+      div.style.left = left+"px";
+      window.removeEventListener("mousemove", moveHoDiv);
+    } else {
+      col = bp%6;
+      line = Math.round(top/100);
+      top  = 100*line;
+      div.style.top  = top+"px";
+      window.removeEventListener("mousemove", moveVeDiv);
+    }
+    bp   = 6*line+col;
+    blocks[bn-1][0] = bp;
+    window.removeEventListener("mouseup", mouseUp);
+    if (bn==1 && bp==16) {
+      document.getElementById("msg").innerHTML = "YOU WIN !!";
+    } else {
+      showTips();
+    }
+  }
+  function moveFreeUp() {
+    var line, col, empty;
+    line = Math.round(top/100);
+    col  = Math.round(left/100);
+    top  = 100*line;
+    left = 100*col;
+    if (500<left) {
+      if (div.parentElement.id=="board") {
+        div.parentNode.removeChild(div);
+        blocks[bn-1][0] = delBlk;  // like a delete
+      } else {
+        div.style.top  = sTop+"px";
+        div.style.left = sLeft+"px";
+      }
+    } else {
+      bp = 6*line+col;
+      if (div.parentElement.id=="board") {
+        empty = isEmptyBlockWith(bp, bn-1, blocks);
+      } else {
+        empty = isEmptyBlock(bp, bt, blocks);
+      }
+      if (empty) {
+        if (div.parentElement.id=="board") {
+          blocks[bn-1][0] = bp;
+        } else {
+          var blk    = document.createElement("img");
+          blk.width  = div.width;
+          blk.height = div.height;
+          blk.src    = div.src;
+          blk.style.top  = top+"px";
+          blk.style.left = left+"px";
+          document.getElementById("board").appendChild(blk);
+          blocks.push([bp, bt]);
+          movableDiv(blk, bt, blocks.length, 6*line+col, top, left);
+          top  = sTop;
+          left = sLeft;
+        }
+      } else {
+        top  = sTop;
+        left = sLeft;
+      }
+      div.style.top  = top+"px";
+      div.style.left = left+"px";
+    }
+    window.removeEventListener("mousemove", moveFreeDiv);
+    window.removeEventListener("mouseup", moveFreeUp);
+  }
+  function moveHoDiv(ev) {
+    ev.preventDefault();
+    left = Math.min(max,Math.max(min,ev.clientX+deltaX));
+    div.style.left = left+"px";
+  }
+  function moveVeDiv(ev) {
+    ev.preventDefault();
+    top = Math.min(max,Math.max(min,ev.clientY+deltaY));
+    div.style.top  = top+"px";
+  }
+  function moveFreeDiv(ev) {
+    ev.preventDefault();
+    left = Math.min(maxLeft,Math.max(minLeft,ev.clientX+deltaX));
+    top  = Math.min(maxTop, Math.max(minTop, ev.clientY+deltaY));
+    div.style.left = left+"px";
+    div.style.top  = top+"px";
+  }
+  // function movableDiv
+  div.addEventListener("mousedown", mouseDown, false);
+}
+// Check if a cell is empty
+function isEmpty(p, blocks) {
+  var empty = true;
+  for (var i=0; i<blocks.length && empty; i++) {
+    var bp = blocks[i][0];
+    var bt = blocks[i][1];
+    empty = (bp===delBlk) ||
+            (p!=bp && p!=(bp+inc1Bl[bt]) && p!=(bp+inc2Bl[bt]));
+  }
+  return empty;
+}
+// Check if we can place a block bt at p
+function isEmptyBlock(p, bt, blocks) {
+  var empty = blocks && blocks.length;
+  if (empty) {
+    empty =  isEmpty(p,            blocks) &&
+             isEmpty(p+inc1Bl[bt], blocks) &&
+             isEmpty(p+inc2Bl[bt], blocks);
+  }
+  return empty;
+}
+// Check if a cell is empty with bn block
+function isEmptyWith(p, bn, blocks) {
+  var empty = true;
+  for (var i=0; i<blocks.length && empty; i++) {
+    if (i!=bn) {  // tempory remove bn
+      var bp = blocks[i][0];
+      var bt = blocks[i][1];
+      empty = (bp===delBlk) ||
+              (p!=bp && p!=(bp+inc1Bl[bt]) && p!=(bp+inc2Bl[bt]));
+    }
+  }
+  return empty;
+}
+// Check where we can move a block
+function isEmptyBlockWith(p, bn, blocks) {
+  var empty = blocks && blocks.length && bn<blocks.length;
+  if (empty) {
+    var bt = blocks[bn][1];
+    empty =  isEmptyWith(p,            bn, blocks) &&
+             isEmptyWith(p+inc1Bl[bt], bn, blocks) &&
+             isEmptyWith(p+inc2Bl[bt], bn, blocks);
+  }
+  return empty;
+}
+// Check if we can place this block on an empty board
+function isPlacable(bp, bt) {
+  return (bt<2 && (bp%6+bt%2)<5) || (1<bt && (bp+6*(bt%2))<30);
+}
+// Find all possible block to add
+function allPossibleBlocks(blocks) {
+  var bps = [];
+  for (var bp=0; bp<36; bp++) {
+    if (isEmpty(bp, blocks)) {
+      for (var bt=0; bt<4; bt++) {
+        if (isPlacable(bp, bt) && isEmptyBlock(bp, bt, blocks)) {
+          bps.push([bp, bt]);
+        }
+      }
+    }
+  }
+  return bps;
+}
+// Find where you can move a block
+function minMaxPos(bp, bt, blocks) {
+  var from = (hvBl[bt])?(bp-bp%6):bp%6;  // First and last cell Line/col
+  var to   = from+inc1Bl[bt]*5;
+  var inc  = inc1Bl[bt];
+  var min  = bp-inc;
+  while (from<=min && isEmpty(min, blocks)) {
+    min -= inc;
+  }
+  min += inc;
+  var max  = bp+end1Bl[bt];
+  while (max<=to && isEmpty(max, blocks)) {
+    max += inc;
+  }
+  max -= end1Bl[bt];
+  return [min,max];
+}
+// Create keys from blocks position
+function getKeysFromBlocks(blocks) {
+  var k1 = 0;
+  var k2 = 0;
+  var split = Math.floor((blocks.length+1)/2);
+  for (var i=split-1; 0<=i; i--) {
+    if (blocks[i][0]!==delBlk) {  // deleted block = null
+      k1 = 144*k1+4*blocks[i][0]+blocks[i][1];
+    }
+  }
+  for (var i=blocks.length-1; split<=i; i--) {
+    if (blocks[i][0]!==delBlk) {   // deleted block = null
+      k2 = 144*k2+4*blocks[i][0]+blocks[i][1];
+    }
+  }
+  return [k1,k2];
+}
+// Create blocks from keys
+function getBlocksFromKeys(keys, nb) {
+  var blocks = [];
+  var ks = [parseInt(keys[0]), parseInt(keys[1])];
+  for (var k=0; k<2; k++) {
+    while (ks[k]) {
+      var bt = ks[k]%4;
+      var ps4 = (ks[k]-bt)%144;
+      ks[k] = (ks[k]-ps4-bt)/144;
+      blocks.push([ps4/4,bt]);
+    }
+  }
+  // We can mist the last block if it is 000
+  if (blocks.length<nb) {
+    blocks.push([0,0]);
+  }
+  return blocks;
+}
+// Check if we have this keys in graph
+function isKey(keys) {
+  return undefined !== graph[keys[0]] &&
+         undefined !== graph[keys[0]][keys[1]];
+}
+// Add a bkocks position to graph
+// and return true if is it new
+function addBlocksToGraph(blocks, v) {
+  var keys = getKeysFromBlocks(blocks);
+  if (undefined === graph[keys[0]]) {
+    graph[keys[0]] = [];
+  }
+  var isNew = !isKey(keys);
+  if (isNew) {
+    nodeCount++;
+    graph[keys[0]][keys[1]] = v;
+    (v==1)&&winCount++;
+  }
+  return isNew;
+}
+// Create the HTML board
+function showBoard(blocks) {
+  for (var i=0; i<blocks.length; i++) {
+    var blk    = document.createElement("img");
+    var bp     = blocks[i][0];
+    var bt     = blocks[i][1];
+    blk.width  = 100*xDim[bt]-5;
+    blk.height = 100*yDim[bt]-5;
+    blk.src    = (i==0)?"blockred.png":
+                ((bt<2)?"blockhorizontal.png":"blockvertical.png");
+    var col  = bp%6;
+    var line = (bp-col)/6;
+    var top  = 100*line;
+    var left = 100*col;
+    blk.style.top  = top+"px";
+    blk.style.left = left+"px";
+    document.getElementById("board").appendChild(blk);
+    movableDiv(blk, bt, i+1, 6*line+col, top, left);
+  }
+}
+// Create teh HTML Edit block
+function addEditBlocks() {
+  // Drag and drop blocks, [line, column, block type]
+  const editBlocks = [[2,2,0],[0,0,3],[0,1,1],[1,1,2],[1,2,0]];
+  const ebDoom = document.getElementById("editBorder");
+  var dLeft = ebDoom.offsetLeft;
+  var dTop  = ebDoom.offsetTop;
+  for (var i=0; i<editBlocks.length; i++) {
+    var blk = document.createElement("img");
+    var bt  = editBlocks[i][2];
+    blk.width  = 100*xDim[bt]-5;
+    blk.height = 100*yDim[bt]-5;
+    blk.src    = (i==0)?"blockred.png":
+                  ((bt<2)?"blockhorizontal.png":"blockvertical.png");
+    var line = editBlocks[i][0];
+    var col  = editBlocks[i][1];
+    var top    = 100*line+dTop;
+    var left   = 100*col +dLeft;
+    blk.style.top  = top+"px";
+    blk.style.left = left+"px";
+    ebDoom.appendChild(blk);
+    movableDiv(blk, bt, i+1, 6*line+col, top, left);
+  }
+}
+// Find all positions where I can move a blocks
+function allOtherPosition(bn, blocks) {
+  var bps    = [];
+  if (bn<blocks.length) {
+    var minMax = minMaxPos(blocks[bn][0], blocks[bn][1], blocks);
+    var inc    = inc1Bl[blocks[bn][1]];
+    var bp     = blocks[bn][0];
+    for (var i=minMax[0]; i<=minMax[1] && minMax[0]<=minMax[1]; i+=inc) {
+      if (i!=bp) {
+        bps.push(i);
+      }
+    }
+  }
+  return bps;
+}
+// Find available position to move a block back and forward for one step
+function posBegEnd(bn, blocks) {
+  var bps = [];
+  if (bn<blocks.length) {
+    var bp  = blocks[bn][0];
+    var bt  = blocks[bn][1];
+    if (bt<2) { // Horizontal
+      0<(bp%6) && isEmpty(bp-1, blocks) && bps.push(bp-1);
+      ((bp%6)+end1Bl[bt])<6 && isEmpty(bp+end1Bl[bt], blocks) && bps.push(bp+inc1Bl[bt]);
+    } else {
+      5<bp && isEmpty(bp-6, blocks) && bps.push(bp-6);
+      bp+end1Bl[bt]<36 && isEmpty(bp+end1Bl[bt], blocks) && bps.push(bp+inc1Bl[bt]);
+    }
+  }
+  return bps;
+}
+// Find the shortest path
+function createShortPath() {
+  var foundOne = true;
+  for (var lvl = 1; lvl<1000 && foundOne; lvl++) {
+    foundOne = false;
+    for (var i in graph) {
+      for (var j in graph[i]) {
+        if (graph[i][j]==lvl) {
+          blocks = getBlocksFromKeys([i,j], blocks.length);
+          foundOne = true;
+          // Find all board on Graph from this nove
+          for (var ib=0; ib<blocks.length; ib++) {
+            var ap = posBegEnd(ib, blocks);
+            if (ap.length) {
+              var bp  = blocks[ib][0];
+              for (var ip=0; ip<ap.length; ip++) {
+                blocks[ib][0] = ap[ip];
+                var keys = getKeysFromBlocks(blocks);
+                if (isKey(keys)) {
+                  var g = graph[keys[0]][keys[1]];
+                  if (g==0 || g>lvl+1) {
+                      graph[keys[0]][keys[1]] = lvl+1;
+                  }
+                } else {
+                  console.log("Not in Graph !!");
+                }
+              }
+              blocks[ib][0] = bp;
+            }
+          }
+        }
+      }
+    }
+  }
+  pathLen = lvl-3;
+}
+// Create all path from blocks
+function createPathFromBlocks(blocks) {
+  graph = [];
+  addBlocksToGraph(blocks, 1);  // We start her with lvl=1
+  var foundOne = true;
+  for (var lvl = 1; lvl<1000 && foundOne; lvl++) {
+    var countLvl = 0;
+    foundOne = false;
+    for (var i in graph) {
+      for (var j in graph[i]) {
+        if (graph[i][j]==lvl) {
+          foundOne = true;
+          blocks = getBlocksFromKeys([i,j], blocks.length);
+          // Move all blocks
+          for (var ib=0; ib<blocks.length; ib++) {
+            var ap = posBegEnd(ib, blocks);
+            //var ap = allOtherPosition(ib, blocks);
+            var bp = blocks[ib][0];
+            for (var ip=0; ip<ap.length; ip++) {
+              blocks[ib][0] = ap[ip];
+              addBlocksToGraph(blocks, lvl+1);
+            }
+            blocks[ib][0] = bp;
+          }
+        }
+      }
+    }
+  }
+  pathLen = lvl-3;
+  return pathLen;
+}
+function markWin(nBl) {
+  winCount = 0;
+  for (var i in graph) {
+    for (var j in graph[i]) {
+      var blocks = getBlocksFromKeys([i,j], nBl);
+      if (blocks[0][0] == 16) {
+        graph[i][j] = 1;
+        winCount++;
+      } else {
+        graph[i][j] = 0;
+      }
+    }
+  }
+}
+function digDownPath(blocks) {
+  createPathFromBlocks(blocks);
+  markWin(blocks.length);
+}
+function copyBlocks(blocks) {
+  var nb = [];
+  for (var i=0; i<blocks.length; i++) {
+    nb[i] = [blocks[i][0],blocks[i][1]];
+  }
+  return nb;
+}
+function sameBlocks(cb) {
+  var same = true;
+  for (var i=0; i<blocks.length && same; i++) {
+    same = cb[i][0]==blocks[i][0] && cb[i][1]==blocks[i][1];
+  }
+  return same;
+}
+function withCommas(v) {
+  return v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+function editBoard() {
+  editMode = !editMode;
+  if (editMode) {
+    document.getElementById("edit").innerHTML = "Play";
+    document.getElementById("editBlocks").style.display = "block";
+    if (firstEdit) {
+      addEditBlocks();
+      firstEdit = false;
+    }
+  } else {
+    document.getElementById("edit").innerHTML = "Edit";
+    document.getElementById("editBlocks").style.display = "none";
+  }
+}
+function showTips() {
+  if (tipsMode) {
+    var msg = "";
+    var keys = getKeysFromBlocks(blocks);
+    if (isKey(keys)) {
+      var moveCount = graph[keys[0]][keys[1]];
+      if (moveCount) {
+        msg += (graph[keys[0]][keys[1]]-1)+" moves before you win"+br;
+      } else {
+        msg += "No winning move";
+      }
+    } else {
+      msg += "Something Wrong,"+br+" I cannot find it"+br+"Click Check"+br ;
+    }
+    document.getElementById("msg").innerHTML = msg;
+  }
+}
+function tipsBoard() {
+  tipsMode = !tipsMode;
+  if (tipsMode) {
+    document.getElementById("tips").innerHTML = "Hide Tips";
+    showTips();
+  } else {
+    document.getElementById("tips").innerHTML = "Show Tips";
+    document.getElementById("msg").innerHTML = "";
+  }
+}
+function checkBoard() {
+  var cb = copyBlocks(blocks);
+  var msgDiv = document.getElementById("msg");
+  var msg = "";
+  msgDiv.innerHTML += "Start Digging"+br;
+  winCount  = 0;
+  digCount  = digMax;
+  nodeCount = 0;
+  lvlCount  = 0;
+  graph     = [];
+  var t0 = performance.now();
+  digDownPath(blocks);
+  var t1 = performance.now();
+  msgDiv.innerHTML += "End Digging"+br;
+  if (sameBlocks(cb)) {
+    msg = "Successful Digging in "+Math.round(t1-t0)+"ms"+br+
+          "with "+withCommas(nodeCount)+" nodes,"+br+
+          (winCount?"We have "+winCount+" solutions(s)":"NO WINNING SOLUTION")+br;
+  } else {
+    msg = "Something not right, call for assistance"+br;
+  }
+  msgDiv.innerHTML += msg;
+  if (winCount) {
+    msgDiv.innerHTML += "Start analysing path"+br;
+    createShortPath();
+    blocks = cb;
+    msgDiv.innerHTML += "Longest path is "+pathLen+br;
+    var keys = getKeysFromBlocks(blocks);
+    var moveCount = graph[keys[0]][keys[1]]-1;
+    msgDiv.innerHTML += "Nb moves to win is "+moveCount+br;
+    msgDiv.innerHTML += "End analysing path"+br;
+  } else {
+    msgDiv.innerHTML += "No path to analyse"+br;
+  }
+}
+function analyzeBoard() {
+  document.getElementById("msg").innerHTML = "";
+  checkBoard();
+}
+function clearShowBoard() {
+  var divElm = document.getElementById("board");
+  var imgElm = divElm.getElementsByTagName("img");
+  while (imgElm.length) {
+    divElm.removeChild(imgElm[0]);
+  }
+}
+function clearBoard() {
+  clearShowBoard();
+  blocks = [[12,0]];
+  showBoard(blocks);
+}
+// Create a string of blocks from blocks
+function fromBlocksToString(blocks){
+  var sg = [];
+  for (var i=0; i<blocks.length; i++) {
+    var bp   = blocks[i][0];
+    var col  = bp%6;
+    var line = (bp-col)/6;
+    if (bp!==delBlk) {  // Null is a deleted blocks
+      sg.push(line.toString()+col.toString()+blocks[i][1]);
+    }
+  }
+  return sg.join(" ");
+}
+// Create blocks with a string of blocks
+function fromStringToBlocks(sg) {
+  var blocks = [];
+  var asg    = sg.split(" ");
+  for (var i=0; i<asg.length; i++) {
+    if (asg[i].length==3) {
+      var bt   = Math.min(3,parseInt(asg[i].charAt(2)));
+      var line = parseInt(asg[i].charAt(0));
+      var col  = parseInt(asg[i].charAt(1));
+      blocks.push([6*line+col, bt]);
+    }
+  }
+  return blocks;
+}
+// Find a new UBM to play
+function newFullBoard() {
+  var blocks     = [[16,0]];  // Start with a winning position
+  var moves      = allPossibleBlocks(blocks);
+  var loopCount = 30;
+  while (moves.length && blocks.length<14 && loopCount--) {  // Max 14
+    var oneMove = moves[Math.floor(moves.length*Math.random())];
+    if (Math.floor(oneMove[0]/6)!=2 || 1<oneMove[1]) {
+      blocks.push(oneMove);  // no horizontal block at line 2
+      moves = allPossibleBlocks(blocks);
+    } else {
+      moves = (moves.length==1)?[]:allPossibleBlocks(blocks);
+    }
+  }
+  !loopCount && console.log("LOOP COUNT REACH 0");
+  return blocks;
+}
+// Find longest path
+function findLongestPath() {
+  var longest = 0;
+  var keys = [];
+  for (var i in graph) {
+    for (var j in graph[i]) {
+      if (longest<graph[i][j]) {
+        keys = [i,j];
+        longest = graph[i][j];
+      }
+    }
+  }
+  return keys;
+}
+// Create a new board to play
+function newGame() {
+  fblocks = newFullBoard();
+  var currLen = -1;
+  var lastLen = 0;
+  var bestLen =  0;
+  var loopCount = 10;
+  var msgDiv = document.getElementById("msg");
+  msgDiv.innerHTML = "Start Digging"+br;
+  do {
+    lastLen = maxLen;
+    var maxLen = -1;
+    var maxIb  =  0;
+    for (var ib=1; ib<fblocks.length; ib++) {
+      blocks  = fblocks.slice(0,ib).concat(fblocks.slice(ib+1));
+      createPathFromBlocks(blocks);
+      markWin(blocks.length);
+      createShortPath();
+      var keys = findLongestPath();
+      var currLen = graph[keys[0]][keys[1]];
+      if (currLen>maxLen) {
+        msgDiv.innerHTML += "Found a "+currLen+" move(s) path"+br;
+        maxLen = currLen;
+        maxKey = keys;
+      }
+    }
+    msgDiv.innerHTML += "Best path is "+maxLen+br;
+    fblocks = getBlocksFromKeys(maxKey, blocks.length);
+    if (maxLen>lastLen) {
+      msgDiv.innerHTML += "Trying to make it better"+br;
+    }
+  } while (maxLen>lastLen && loopCount--);
+  !loopCount && console.log("LOOP COUNT REACH 0");
+  blocks = fblocks;
+  msgDiv.innerHTML += "End digging with "+maxLen+br;
+  clearShowBoard();
+  showBoard(blocks);
+  checkBoard();
+}
+// Find a game to play
+function newEasy() {
+  newGame();
+}
+// Check if locale storage is available
+function checkLocalStorage() {
+  var valid = true;
+  try {
+    window.localStorage.key(0);
+  } catch(err) {
+    var msg = "Sorry, you have to enable"+br+
+              "third-party scripts cookies"+br+
+              "if you want to save and load.";
+    document.getElementById("msg").innerHTML = msg;
+    valid = false;
+  }
+  return valid;
+}
+function saveBoard() {
+  if (blocks.length && checkLocalStorage()) {
+    var msg     = "";
+    var keyname = "UBM-";
+    var names   = [];
+    var key     = " ";
+    for (var i=0; key; i++) {
+      key = window.localStorage.key(i);
+      if (key && key.substring(0, keyname.length)==keyname) {
+        names.push(key.substring(keyname.length));
+      }
+    }
+    var sName = names.length?names.join(", "):"Empty list";
+    var name  = prompt("Enter a name for your board: "+sName);
+    if (name) {
+      var sb    = fromBlocksToString(blocks);
+      localStorage.setItem("UBM-"+name, sb);
+      msg += "Game "+name+" has been saved";
+    } else {
+      msg += "Nothing to save";
+    }
+    document.getElementById("msg").innerHTML = msg;
+  }
+}
+function loadBoard() {
+  var valid = checkLocalStorage();
+  if (valid) {
+    var msg     = "";
+    var keyname = "UBM-";
+    var names   = [];
+    var key     = " ";
+    for (var i=0; key; i++) {
+      key = window.localStorage.key(i);
+      if (key && key.substring(0, keyname.length)==keyname) {
+        names.push(key.substring(keyname.length));
+      }
+    }
+    var sName = names.length?names.join(", "):"Empty list";
+    var name  = prompt("Enter a name for your board: "+sName);
+    if (name && name.length) {
+      var sb = localStorage.getItem("UBM-"+name);
+      clearShowBoard();
+      blocks = fromStringToBlocks(sb);
+      showBoard(blocks);
+      msg += "Game "+name+" has been loaded";
+    } else {
+      msg += "Nothing to load";
+    }
+    document.getElementById("msg").innerHTML = msg;
+  }
+}
+function start() {
+  var msg = "";
+  var sg  = "";
+  //sg = "220 003 301 500 110 422 032 530 243 052 352";
+  //sg = "230 003 301 500 110 422 032 530 152 352";
+  //sg = "210 003 022 031 133 152 243 312 352 420 501"; 
+  //  13,14 0,12 2,8 3,5 9,21 11,17 16,28 19,25 23,29 26,27 30,32
+  //sg = "230 152";
+  //sg = "210 003 022 031 133 152 243 312 352 420 501";
+  sg="200 002 011 422 120 232 432 042 052 242 252 440 540"; // 60 !!
+  blocks = fromStringToBlocks(sg);
+  showBoard(blocks);
+  checkBoard();
+}
+  </script>
+</html>
