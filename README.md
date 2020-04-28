@@ -9,3 +9,12 @@
  <p>UnBlock Me: <p>
  - https://staubinr.github.io/UnBlockMe/UnblockMe.html
  </li>
+ <li>
+ <p>OrbitNCorpsVerlet: <p>
+ - https://staubinr.github.io/OrbitNCorpsVerlet/OrbitNCorpsVerlet.html
+ </li>
+ <li>
+ <p>Infection: <p>
+ - https://staubinr.github.io/Infection/Infection.html
+ </li>
+</ul>
