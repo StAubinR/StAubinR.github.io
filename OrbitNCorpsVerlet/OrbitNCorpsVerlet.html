@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html>
+<body onload="start();">
+  Orbite 2D à N corps<br>
+  <label>N:</label>
+  <input class="box" type="number" id="n" value="3">
+  <input class="sli" type="range"  id="sn" min="2" max="10" step="1" value="3"><br>
+  <div id="data">
+    <span id="ssi">i </span><div id="di"><div></div></div>
+    <span id="sdm">M </span><div id="dm"></div>
+    <span id="sdx">X </span><div id="dx"></div>
+    <span id="sdy">Y </span><div id="dy"></div>
+    <span id="svx">Vx</span><div id="dvx"></div>
+    <span id="svy">Vy</span><div id="dvy"></div>
+  </div>  
+  <input type="button" value="Run" onclick="run()"><br>
+  <canvas id="can" width="600" height="400"></canvas>
+</body>
+<style>
+label { 
+  display: inline-block;
+  width: 50px;
+}
+input { 
+  width: 50px;
+}
+input.box { width: 75px; }
+input.sli { width: 250px; }
+
+#data {
+  width: 600px;
+  overflow-x: scroll;
+}
+#data>div>div, #data div input {
+  width: 60px;
+  float: left;
+  text-align: right;
+}
+#data>div>input {
+  width: 56.02px;
+}
+#data>span {
+  float: left;
+  clear: both;
+  width: 50px;
+}
+#can  { border: 1px solid; display: block; }
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+    /* display: none; Crashes Chrome on hover */
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type=number] {
+    -moz-appearance:textfield; /* Firefox */
+}
+</style>
+<script>
+const cLeft   = 25;
+const cTop    = 25;
+const cWidth  = 600-cLeft;
+const cHeight = 400-cTop;
+var   plan;
+function Graph(cLeft, cWidth, cTop, cHeight) {
+  this.canvas = document.getElementById('can');
+  this.ctx    = this.canvas.getContext('2d');
+  this.left  = cLeft;
+  this.width = cWidth;
+  this.top   = cTop;
+  this.height = cHeight;
+  
+  this.setScale = function(x1, y1, x2, y2) {
+    this.x1 = x1;
+    this.y1 = y1;
+    this.x2 = x2;
+    this.y2 = y2;
+    // f(x) = mx+b = left+(x-x1)*width/(x2-x1)
+    this.mx = this.width/(x2-x1);
+    this.bx = this.left - x1*this.mx;
+    this.my = this.height/(y1-y2);
+    this.by = this.top - y2*this.my;
+  }
+  this.scaleX = function(x) {
+    return this.bx+this.mx*x;
+  }
+  this.scaleY = function(y) {
+    return this.by+this.my*y;
+  }
+  this.line = function(x1, y1, x2, y2) {
+    this.ctx.beginPath();
+    this.ctx.moveTo(this.scaleX(x1), this.scaleY(y1));
+    this.ctx.lineTo(this.scaleX(x2), this.scaleY(y2));
+    this.ctx.stroke();
+  }
+  this.courbeXY = function(x,y,c) {
+    this.ctx.beginPath();
+    this.ctx.moveTo(this.scaleX(x[0]), this.scaleY(y[0]));
+    for (var i=1; i<x.length; i++) {
+      this.ctx.lineTo(this.scaleX(x[i]), this.scaleY(y[i]));
+    }
+    this.ctx.strokeStyle = c;
+    this.ctx.stroke();
+  }
+  this.text = function(t, x, y) {
+    this.ctx.fillText(t, this.scaleX(x), this.scaleY(y));
+  }
+  this.grid = function(xs, yh, ys, xw){
+    this.line(this.x1, this.y1, this.x2, this.y1);
+    this.line(this.x1, this.y1, this.x1, this.y2);
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'top';
+    var x = 0;
+    for (var i=0; i<=xs; i++) {
+      x = this.x1+i*(this.x2-this.x1)/xs;
+      this.line(x, this.y1, x, this.y1+yh);
+      this.text(x.toFixed(1), x, this.y1);
+    }
+    this.ctx.textAlign = 'end';
+    this.ctx.textBaseline = 'middle';
+    var y = 0;
+    for (var i=1; i<=ys; i++) {
+      y = this.y1+i*(this.y2-this.y1)/ys;
+      this.line(this.x1, y, this.x1+xw, y);
+      this.text(y.toFixed(1)+' ', this.x1, y);
+    }
+  }
+  this.clearCanvas = function() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+}
+function slider(sObj, iObj) {
+  sObj.oninput = function() {
+    iObj.value = sObj.value;
+    proc();
+  };
+  sObj.onmouseup = function() {
+    iObj.value = sObj.value;
+    proc(true);
+  };
+}
+function addElem(parent, type, text, ind, value) {
+  var oNode = document.createElement(type);
+  var tNode = document.createTextNode(text);
+  oNode.appendChild(tNode);
+  oNode.cellIndex = ind;
+  if (type === 'INPUT') {
+    oNode.type = 'number';
+    if (value !== undefined) {
+      oNode.value = value;
+    }
+  }
+  parent.appendChild(oNode);
+  return oNode
+}
+function proc(reset) {
+  if (reset) {
+    var n = Number(document.getElementById('n').value);
+    di.innerHTML = '';
+    dm.innerHTML = '';
+    dx.innerHTML = '';
+    dy.innerHTML = '';
+    dvx.innerHTML = '';
+    dvy.innerHTML = '';
+    for (var i=0; i<n; i++) {
+      addElem(di, 'DIV', i.toString(), i);
+      addElem(dm, 'INPUT', '', i, adm[i].toFixed(1)).addEventListener("change", 
+        function(ev) {
+          var v = Number(ev.target.value) || null;
+          adm[ev.target.cellIndex] = v;
+        });
+      addElem(dx, 'INPUT', '', i, adx[i].toFixed(1)).addEventListener("change", 
+        function(ev) {
+          var v = Number(ev.target.value) || null;
+          adx[ev.target.cellIndex] = v;
+        });
+      addElem(dy, 'INPUT', '', i, ady[i].toFixed(1)).addEventListener("change", 
+        function(ev) {
+          var v = Number(ev.target.value) || null;
+          ady[ev.target.cellIndex] = v;
+        })
+      addElem(dvx, 'INPUT', '', i, advx[i].toFixed(1)).addEventListener("change", 
+        function(ev) {
+          var v = Number(ev.target.value) || null;
+          advx[ev.target.cellIndex] = v;
+        });
+      addElem(dvy, 'INPUT', '', i, advy[i].toFixed(1)).addEventListener("change", 
+        function(ev) {
+          var v = Number(ev.target.value) || null;
+          advy[ev.target.cellIndex] = v;
+        })
+    }
+    var px = (dPx*n+65)+'px';
+    di.style.width = px;
+    dm.style.width = px;
+    dx.style.width = px;
+    dy.style.width = px;
+    dvx.style.width = px;
+    dvy.style.width = px;
+    
+    x = new Array(n);
+    y = new Array(n);
+    for (var i=0; i<n; i++) {
+      x[i] = new Array(nbStep).fill(0);
+      y[i] = new Array(nbStep).fill(0);
+    }
+  }
+}
+
+function square(x) {
+  return x*x;
+}
+// Algorithm
+//  F = m a; S(Fxj) = m*S(axj) = m g S(mj (xj-x)/r^3)
+//     r^2 = (xj-x)^2 + (yj-y)^2
+//  axi = S(axj) = g S(mj (xj-x)/r^3);
+function an(n, m, x, y) {
+  var ax = new Array(n).fill(0);
+  var ay = new Array(n).fill(0);
+  for (var i=0; i<n; i++) {
+    for (var j=i+1; j<n; j++) {
+      var difX  = x[j]-x[i];
+      var difY  = y[j]-y[i];
+      var dist15  = Math.pow(square(difX)+square(difY), 1.5);
+      var fx = difX/dist15
+      var fy = difY/dist15
+      ax[i] += m[j]*fx;
+      ay[i] += m[j]*fy;
+      ax[j] -= m[i]*fx;
+      ay[j] -= m[i]*fy;
+    }
+  }
+  return [ax, ay];
+}
+function centerPath(n, m, vx, vy) {
+  // Som m*v should be 0
+  var sx = 0;
+  var sy = 0;
+  for (i=0; i<n; i++) {
+    sx += m[i]*vx[i];
+    sy += m[i]*vy[i];
+  }
+  sx = sx/n;
+  sy = sy/n;
+  for (i=0; i<n; i++) {
+    vx[i] -= sx/m[i];
+    vy[i] -= sy/m[i];
+  }
+}
+// Algo
+// 1) Initialisation du pas h et de la durée T.
+// 2) Initialisation des conditions initiales : t=0, r=r0 et v=v0.
+// 3) Définition de la fonction a(r).
+// 4) Tant que t≤T faire :
+//    1) Calcul de a0=a(r).
+//    2) Nouvelle position : r=r+hv+h*h*a0/2.
+//    3) Calcul de a1=a(r).
+//    4) Nouvelle vitesse : v=v+h(a0+a1)/2
+//    5) t=t+h.
+//    6) Enregistrement des données
+const g = 4*Math.pow(Math.PI,2);
+function comp() {
+  var lastT  = 0.1;
+  var n      = Number(nIn.value);
+  var h      = lastT/nbStep;
+  var hg     = h*g;
+  var hgd2   = hg/2;
+  var h2     = h*h;
+  var h2gd2    = h2*g/2;
+  var axy0, axy1;
+  for (var i=0; i<n; i++) {
+    plan.courbeXY(x[i],y[i],'white');
+  }
+  for (var i=0; i<n; i++) {
+    x[i][0] = cx[i];
+    y[i][0] = cy[i];
+  }
+  axy0 = an(n, cm, cx, cy);
+  for (var s=1; s<nbStep; s++) {
+    for (var i=0; i<n; i++) {
+      cx[i]  += h*cvx[i] + h2gd2*axy0[0][i];
+      x[i][s] = cx[i];
+      cy[i]  += h*cvy[i] + h2gd2*axy0[1][i];
+      y[i][s] = cy[i];
+    }
+    axy1 = an(n, cm, cx, cy);
+    for (var i=0; i<n; i++) {
+      cvx[i] += hgd2*(axy0[0][i]+axy1[0][i]);
+      cvy[i] += hgd2*(axy0[1][i]+axy1[1][i]);
+    }
+    axy0 = axy1;
+  }
+  for (var i=0; i<n; i++) {
+    plan.courbeXY(x[i],y[i], 'black');
+  }
+}
+function run() {
+  comp();
+}
+function copyArr(ad, as) {
+  for (var i=0; i<as.length; i++) {
+    ad[i] = as[i];
+  }
+}
+var n, sn, plan, dPx;
+var dm, da, di, dx, dy, dvx, dvy;
+var adm, adx, ady, advx, advy;
+var cm, cx, cy, cvx, cvy;
+var x, y;
+const maxn = 10;
+const nbStep = 1000;
+function start() {
+  nIn = document.getElementById('n');
+  adm  = new Array(maxn).fill(0);
+  adx  = new Array(maxn).fill(0);
+  ady  = new Array(maxn).fill(0);
+  advx = new Array(maxn).fill(0);
+  advy = new Array(maxn).fill(0);
+  copyArr(adm,  [ 1, 1, 1]);
+  copyArr(adx,  [-1, 1, 0]);
+  copyArr(ady,  [ 0, 0, 1]);
+  copyArr(advx, [ 0, 0, 1]);
+  copyArr(advy, [-1, 1, 0]);
+  
+  plan = new Graph(cLeft, cWidth-cLeft, cTop, cHeight-cTop);
+  plan.setScale(-2, -2, 2, 2);
+  plan.grid(10, 0.01, 10, 0.01);
+  cm     = adm.slice();
+  cx     = adx.slice();
+  cy     = ady.slice();
+  cvx    = advx.slice();
+  cvy    = advy.slice();
+  var n      = Number(nIn.value);
+  centerPath(n, cm, cvx, cvy);
+  
+  nSl = document.getElementById('sn');
+  slider(nSl, nIn);
+  da  = document.getElementById('data');
+  di  = document.getElementById('di');
+  dm  = document.getElementById('dm');
+  dx  = document.getElementById('dx');
+  dy  = document.getElementById('dy');
+  dvx = document.getElementById('dvx');
+  dvy = document.getElementById('dvy');
+  var child = di.childNodes[0];
+  dPx = window.getComputedStyle(child).getPropertyValue('width').slice(0,-2);
+  proc(true);
+}
+</script>
+</html>
