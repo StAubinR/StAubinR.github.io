@@ -1,6 +1,11 @@
 # StAubinR.github.io
- Web pages examples<br>
- Sudoku:<br>
- - https://staubinr.github.io/Sudoku/SudokuWP.html <br>
- UnBlock Me: <br>
- - https://staubinr.github.io/UnBlockMe/UnblockMe.html <br>
+<p>Web pages examples</p>
+<ul>
+ <li>
+ <p>Sudoku:</p>
+ - https://staubinr.github.io/Sudoku/SudokuWP.html
+ </li>
+ <li>
+ <p>UnBlock Me: <p>
+ - https://staubinr.github.io/UnBlockMe/UnblockMe.html
+ </li>
