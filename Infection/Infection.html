@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html>
+<body onload="start();">
+  <div id="mi"></div><br>
+  <label id="lt"></label>
+  <input class="box" type="number" id="ro" name="ro" value="2.3">
+  <input class="sli" type="range"  id="ros" min="0.1" max="5" step="0.1" value="2.3"><br>
+  <label id="lm"></label>
+  <input class="box" type="number" id="mo" name="mo" value="2.3">
+  <input class="sli" type="range"  id="mos" min="0.1" max="10" step="0.1" value="2.3"><br>
+  <label id="ld"></label>
+  <input class="box" type="number" id="di" name="di"  value="14">
+  <input class="sli" type="range"  id="dis" min="1" max="30" step="1" value="14"><br>
+  <label id="lp"></label>
+  <input class="box" id="po" name="po" value="10 000">
+  <input class="sli" type="range"  id="pos" min="1000" max="10000000" step="1000" value="100000"><br>
+  <label id="lj"></label>
+  <input class="box" id="pe" name="pe" value="500">
+  <input class="sli" type="range"  id="pes" min="50" max="1000" step="50" value="500"><br>
+  <input class="but" type="button" value="Draw" onclick="proc(true);">
+  <input class="but" type="button" value="URL" onclick="showURL();"><br>
+  <div id="data">
+    <span id="sj"></span><div id="dPo"><div></div></div>
+    <span id="si"></span><div id="dRo"></div>
+    <span id="sr"></span><div id="dNr"></div>
+  </div>
+  <canvas id="can" width="600" height="400"></canvas>
+  <div id="url" onclick="selectText('url');"></div>
+</body>
+<style>
+label { display: inline-block; width: 300px; }
+input.box { width: 75px; }
+input.sli { width: 250px; }
+#can {
+  border: 1px solid;
+  display: block;
+}
+#data {
+  width: 600px;
+  overflow-x: scroll;
+}
+#data>div>div, #data div input {
+  width: 60px;
+  float: left;
+  text-align: right;
+}
+#data>div>input {
+  width: 56.02px;
+}
+#data>span {
+  float: left;
+  clear: both;
+  width: 50px;
+}
+#url {
+  width: 400px; 
+  overflow-wrap: break-word; 
+  word-break: break-all;
+}
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+    /* display: none; <- Crashes Chrome on hover */
+    -webkit-appearance: none;
+    margin: 0;
+}
+input[type=number] {
+    -moz-appearance:textfield; /* Firefox */
+}
+</style>
+<script>
+const cLeft    = 55;
+const cTop     = 25;
+const cWidth   = 600-cLeft/2;
+const cHeight  = 400-cTop;
+const msxPeriod = 500;
+var   plan, url, dURL;
+var iRo, iDi, iMo, iPo, iPe;
+var sRo, sDi, sMo, sPo, sPe;
+var dPo, dRo, dNr, dPx;
+var inInfect = new Array(msxPeriod);
+
+const lang = {
+  fr: {
+    id: {
+      mi: 'Maladies Infectieuses',
+      lt: 'Taux de transmission d\'un pathogène(Ro) :',
+      lm: 'Taux de mortalité en % :',
+      ld: 'Durée de la période d\'infection en jours:',
+      lp: 'Population:',
+      lj: 'Nombre de jours:',
+      sj: 'Jour',
+      si: 'Infectés',
+      sr: 'Réelle'},
+    txt: {
+      is: 'Individus sains    (S)',
+      ii: 'Individus infectés (I)',
+      ir: 'Individus guéris   (R)',
+      im: 'Individus morts    (D)'}},
+  en: {
+    id: {
+      mi: 'Infectious diseases',
+      lt: 'Reproduction number Ro:',
+      lm: 'Rate of daed people:',
+      ld: 'How long infectious last:',
+      lp: 'Population:',
+      lj: 'How many days:',
+      sj: '#Day',
+      si: 'Infected',
+      sr: 'Real'},
+    txt: {
+      is: 'Safe people     (S)',
+      ii: 'Infected people (I)',
+      ir: 'Recover people  (R)',
+      im: 'Dead people     (D)'}}};
+const lbl =  lang[navigator.language] || lang['en'];
+   
+function Graph(cLeft, cWidth, cTop, cHeight) {
+  this.pas    = 10;
+  this.canvas = document.getElementById('can');
+  this.ctx    = this.canvas.getContext('2d');
+  this.left   = cLeft;
+  this.width  = cWidth;
+  this.top    = cTop;
+  this.height = cHeight;
+  
+  this.setScale = function(x1, y1, x2, y2) {
+    this.x1 = x1;
+    this.y1 = y1;
+    this.x2 = x2;
+    this.y2 = y2;
+    // f(x) = mx+b = left+(x-x1)*width/(x2-x1)
+    this.mx = this.width/(x2-x1);
+    this.bx = this.left - x1*this.mx;
+    this.my = this.height/(y1-y2);
+    this.by = this.top - y2*this.my;
+  }
+  this.scaleX = function(x) {
+    return this.bx+this.mx*x;
+  }
+  this.scaleY = function(y) {
+    return this.by+this.my*y;
+  }
+  this.line = function(x1, y1, x2, y2) {
+    this.ctx.beginPath();
+    this.ctx.moveTo(this.scaleX(x1), this.scaleY(y1));
+    this.ctx.lineTo(this.scaleX(x2), this.scaleY(y2));
+    this.ctx.stroke();
+  }
+  this.lines = function(a, s, c) {
+    this.ctx.beginPath();
+    this.ctx.moveTo(this.scaleX(this.x1), this.scaleY(a[0]));
+    for (var i=1; i<a.length; i++) {
+      this.ctx.lineTo(this.scaleX(this.x1+i*s/this.pas), this.scaleY(a[i]));
+    }
+    this.ctx.strokeStyle = c;
+    this.ctx.stroke();
+  }
+  this.text = function(t, x, y, c) {
+    if (typeof c !== 'undefined') {
+      this.ctx.fillStyle = c;
+    }
+    this.ctx.fillText(t, this.scaleX(x), this.scaleY(y));
+  }
+  this.putSpace = function (n) {
+    return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  }
+  this.grid = function(xs, yh, ys, xw){
+    this.line(this.x1, this.y1, this.x2, this.y1);
+    this.line(this.x1, this.y1, this.x1, this.y2);
+    this.ctx.textAlign = 'center';
+    this.ctx.textBaseline = 'top';
+    var x = 0;
+    for (var i=0; i<=xs; i++) {
+      x = this.x1+i*(this.x2-this.x1)/xs;
+      this.line(x, this.y1, x, this.y1+yh);
+      this.text(this.putSpace(x.toString()), x, this.y1);
+    }
+    this.ctx.textAlign = 'end';
+    this.ctx.textBaseline = 'middle';
+    var y = 0;
+    for (var i=1; i<=ys; i++) {
+      y = this.y1+i*(this.y2-this.y1)/ys;
+      this.line(this.x1, y, this.x1+xw, y);
+      this.text(this.putSpace(y.toString())+' ', this.x1, y);
+    }
+  }
+  this.clearCanvas = function() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+}
+function URL() {
+  // Read a URL parameter
+  this.getPrm = function getPrm() {
+    var prm = [];
+    location.search
+      .substr(1)
+      .split('&')
+      .forEach(function (item) {
+        var tmp = item.split('=');
+        if (tmp[0].length!=0) {
+          prm[tmp[0]] = decodeURIComponent(tmp[1]);
+        }
+      });
+    return prm;
+  }
+  // Create a URL link with a parameter for board
+  this.createURL = function (prm) {
+    var rsl   = [];
+    for (var key in prm) {
+      rsl.push(key+'='+encodeURIComponent(prm[key]).toString());
+    }
+    return location.origin+location.pathname+'?'+rsl.join('&');
+  }
+  // Select text in a div
+  this.selectText = function (containerid) {
+    window.getSelection()
+    .selectAllChildren(
+      document.getElementById(containerid) 
+    );
+  }
+}
+function putSpaceNumber(n) {
+  return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
+function removeSpace(s) {
+  return s.replace(/\s/g, '');
+}
+function slider(sObj, iObj) {
+  sObj.oninput = function() {
+    iObj.value = putSpaceNumber(sObj.value);
+    proc();
+  };
+  sObj.onmouseup = function() {
+    iObj.value = putSpaceNumber(sObj.value);
+    proc(true);
+  };
+}
+function addElem(parent, type, text, ind, value) {
+  var oNode = document.createElement(type);
+  var tNode = document.createTextNode(text);
+  oNode.appendChild(tNode);
+  oNode.cellIndex = ind;
+  if (type === 'INPUT') {
+    oNode.type = 'number';
+    if (value !== undefined) {
+      oNode.value = value;
+    }
+  }
+  parent.appendChild(oNode);
+  return oNode
+}
+// Select text in a div
+function selectText(containerid) {
+  window.getSelection()
+    .selectAllChildren(
+      document.getElementById(containerid) 
+    );
+}
+function getPrm() {
+  var prm = [];
+  prm['ro'] = Number(iRo.value);
+  prm['mo'] = Number(iMo.value);
+  prm['di'] = Number(iDi.value);
+  prm['po'] = Number(removeSpace(iPo.value));
+  prm['pe'] = Number(removeSpace(iPe.value));
+  return prm;
+}
+function setPrm(prm) {
+  for (key in prm) {
+    if (key !== 'in') {
+      var id  = document.getElementById(key);
+      var ids = document.getElementById(key)+'s';
+      if (id) {
+        id.value = putSpaceNumber(prm[key]);
+      }
+      if (ids) {
+        ids.value = prm[key];
+      }
+    } else {
+      var count = 0;
+      var aStr  = prm[key].split('!');
+      for (var i=0; i<aStr.length; i++) {
+        var kv = aStr[i].split('*');
+        if (kv.length == 1) {
+          inInfect[count] = Number(kv[0]);
+          count++;
+        } else {
+          var nb = Number(kv[0]);
+          var va = kv[1];
+          if (va !== 'undefined') {
+            for (var c=0; c<nb; c++) {
+              inInfect[count+c] = va;
+            }
+          }
+          count += nb;
+        }
+      }
+    }
+  }
+}
+function proc(reset) {
+  plan.clearCanvas();
+  var prm  = getPrm();
+  var ps   = prm['po']/prm['ro'];
+  var phi  = 1/prm['di'];
+  var beta = prm['ro']*phi;
+  plan.setScale(0, 0, prm['pe'], prm['po']);
+  plan.grid(10, (plan.y2-plan.y1)/100, 10, (plan.x2-plan.x1)/100);
+  var safe  = new Array(plan.x2*plan.pas);
+  var infec = new Array(plan.x2*plan.pas);
+  var recov = new Array(plan.x2*plan.pas);
+  var dead  = new Array(plan.x2*plan.pas);
+  safe[0]  = prm['po']-(inInfect[0] || 3);
+  infec[0] = inInfect[0] || 3;
+  recov[0] = 0;
+  for (var i=1; i<=plan.x2*plan.pas; i++) {
+    var ni   = beta*safe[i-1]*infec[i-1]/plan.pas/prm['po'];
+    var nr   = phi*infec[i-1]/plan.pas;
+    safe[i]  = safe[i-1]  - ni;
+    if (i%10 == 0 && inInfect[i/plan.pas]) {
+      infec[i] = inInfect[i/plan.pas];
+    } else {
+      infec[i] = infec[i-1] + ni - nr;
+    }
+    recov[i] = recov[i-1] + nr;
+    dead[i]  = recov[i]*prm['mo']/100;
+  }
+  plan.lines(safe,  1, 'blue');
+  plan.lines(infec, 1, 'red');
+  plan.lines(recov, 1, 'green');
+  plan.lines(dead,  1, 'black');
+  
+  var pas = (plan.x2-plan.x1)/4;
+  plan.text(lbl.txt.is, plan.x1 + 1*pas, plan.y2, 'blue');
+  plan.text(lbl.txt.ii, plan.x1 + 2*pas, plan.y2, 'red');
+  plan.text(lbl.txt.ir, plan.x1 + 3*pas, plan.y2, 'green');
+  plan.text(lbl.txt.im, plan.x1 + 4*pas, plan.y2, 'black');
+  
+  if (reset) {
+    dPo.innerHTML = '';
+    dRo.innerHTML = '';
+    dNr.innerHTML = '';
+    for (var i=0; i<prm['pe']; i++) {
+      addElem(dPo, 'DIV', i.toString(), i);
+      addElem(dRo, 'DIV', Math.round(infec[i*plan.pas]), i);
+      addElem(dNr, 'INPUT', '', i, inInfect[i]).addEventListener("change", 
+        function(ev) {
+          var v = Number(ev.target.value) || null;
+          inInfect[ev.target.cellIndex] = v;
+          proc(true);
+        })
+     }
+    var px = (dPx*prm['pe']+65)+'px';
+    dPo.style.width = px;
+    dRo.style.width = px;
+    dNr.style.width = px;
+  }
+}
+function showURL() {
+  var prm   = getPrm();
+  var strIn = [];
+  var last  = 0;
+  for (var i=1; i<inInfect.length; i++) {
+    if (inInfect[i] !== inInfect[last]) {
+      if (i-last == 1) {
+        strIn.push(inInfect[last]);
+      } else {
+        strIn.push((i-last)+'*'+inInfect[last]);
+      }
+      last = i;
+    }
+  }
+  strIn.push((inInfect.length-last)+'*'+inInfect[last]);
+  prm['in'] = strIn.join('!');
+  dURL.innerHTML = url.createURL(prm);
+}
+function start() {
+  // place text on a page with browser language
+  for (const [key, value] of Object.entries(lbl.id)) {
+    document.getElementById(key).innerHTML = value;
+  }
+  iRo = document.getElementById('ro');
+  iDi = document.getElementById('di');
+  iMo = document.getElementById('mo');
+  iPo = document.getElementById('po');
+  iPe = document.getElementById('pe');
+  sRo = document.getElementById('ros');
+  sDi = document.getElementById('dis');
+  sMo = document.getElementById('mos');
+  sPo = document.getElementById('pos');
+  sPe = document.getElementById('pes');
+  
+  dURL = document.getElementById('url');
+  url  = new URL();
+  setPrm(url.getPrm());
+  
+  slider(sRo, iRo);
+  slider(sDi, iDi);
+  slider(sMo, iMo);
+  slider(sPo, iPo);
+  slider(sPe, iPe);
+  dDa = document.getElementById('data');
+  dPo = document.getElementById('dPo');
+  dRo = document.getElementById('dRo');
+  dNr = document.getElementById('dNr');
+  var child = dPo.childNodes[0];
+  dPx = window.getComputedStyle(child).getPropertyValue('width').slice(0,-2);
+  plan = new Graph(cLeft, cWidth-cLeft, cTop, cHeight-cTop);
+  proc(true);
+}
+</script>
+</html>
