@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html> 
+<head> 
+  <title>:: Sudoku Solver ::</title> 
+  <style type="text/css">
+  #main, #mid, #ppln, #right, #left {margin: 2px; padding: 2px;}
+  #ppln, #right {border: 2px solid black; }
+  #main, #footer, #showURL, button, textarea {float: left; clear: both;}
+  #left, #mid, #ppln, #right {float: left;}
+  #main #solution, #main textarea {font-family: monospace; }
+  #showURL {width: 400px; overflow-wrap: break-word; word-break: break-all;}
+  #board table {
+    border-collapse:collapse;
+    border:3px solid black;
+    height: 400px;
+    width: 400px;
+    table-layout: fixed;
+    background-color: white;
+  }
+  .smtxt {
+    font-family: monospace;
+    font-size:   12px;
+    line-height: 10px;
+    position: absolute;
+    top: 3px; left: 8px;
+  }
+  .redsm {color: red;}
+  #board table tr td {
+    border:1px solid black;
+    vertical-align: middle;
+    text-align:  center;
+    position: relative;
+    padding: 0px;
+  }
+  #board table td input {
+    width: 100%;
+    vertical-align: middle;
+    text-align: center;
+    border: 0px;
+    margin: 0px;
+    font-weight: bold;
+    font-size:   20px;
+    font-family: monospace;
+  }
+  #main table tr.box td { border-top-width: 2px;}
+  #main table td.coor   { background: lightgray;}
+  #main table td.box    { border-left-width: 2px;}
+  </style>
+</head> 
+<body onLoad="init();"> 
+  <div id="main">
+    <div id="left">
+      <div id="board" ></div>
+      <div id="showURL" onclick="selectText('showURL')"></div>
+    </div>
+    <div id="mid">
+      <div id="but">
+        <button id="clearBoard"  onclick="clearBoard()">Clear Board</button>
+        <button id="showCand"    onclick="showCand(this)">Show Candidates</button>
+        <button id="validate"    onclick="validGrid(this)">Valid Grid</button>
+        <button id="newEasyGrid" onclick="startBoard(newSg('easy'));">New Easy</button>
+        <button id="newHardGrid" onclick="startBoard(newSg('hard'));">New Hard</button>
+        <button id="tips"        onclick="tips()">Show Tips</button>
+        <button id="url"         onclick="url()">Show URL</button>
+        <button id="pdf"         onclick="pdf()">Create PDF</button>
+        <button id="loadBoard"   onclick="loadBoard()">Load Board</button>
+        <textarea id="boardInput" rows="9" cols="8" onchange ="formatText()" onkeyup="formatText()"></textarea>
+      </div>
+    </div>
+    <div id="ppln">Your Move
+      <div id="move"></div>
+    </div>
+    <div id="right"> 
+      <div id="solution">
+        <div id="msg">Click a cell<br />and type a number<br /></div>
+        <div id="sol" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+  <div id="footer">2020 Richard</div>
+</body> 
+</html>
+  <script src="https://unpkg.com/jspdf@latest/dist/jspdf.min.js"></script>
+  <script type="text/javascript"> 
+"use strict";
+// Vocabulary:
+// g or Grid: the 9x9 cells, can also be 1x81 cells
+// b or Box: 3x3 cells, 9 of it.  Block or Region
+// l or Line:   1x9 cells, 9 of it
+// c or Column: 9x1 cells, 9 of it
+// ca or Candidate: Possible choice for a cell
+// group: Group of 9 cells. One row, column or box
+// Global var
+const nl  = '\n';
+const br  = '\<br/\>';
+const sp  = '&nbsp;';
+const dim = 3;              // 3x3 sudoku board
+const nbcs = dim*dim;       // 9 cells in a set (line, column, block)
+const nbcg = nbcs*nbcs;     // 81 cells in a board
+const bval = [0,1,2,4,8,16,32,64,128,256,512,1024,2048,4096,8192,16384,32768,65536]; // Value of each bit in a number
+const aval = [' ','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F','G'];  // Value you can put in a cell
+const ival = {' ':0, '1':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9,
+        'A':10,'B':11,'C':12,'D':13,'E':14,'F':15,'G':16};                         // Value to number
+const itoa = 'ABCDEFGHIJKLNMOP';             // Ascii to integer
+var blc = [[[],[],[],[],[],[],[],[],[]],
+           [[],[],[],[],[],[],[],[],[]],
+            [[],[],[],[],[],[],[],[],[]]];  // Block Line Column table
+var iblc = [[],[],[]];                      // Index in blc of each position
+var entry       = false;
+var showCagFlag = false;
+// sg: Starting grid as a string
+// cg: Current grid as a string
+// cag: Candidate grid as a vector of 81
+// ocag: Old Candidate grid
+// pcag: Position for each candidate
+// pn: Possible Number for that Grid
+var sg, cg, cag, pcag, ocag, pn;
+var np  = [];            // Number put on a grid is empty
+var inp = 0;             // Index of do redo is at the beginning
+//
+// lsg: load starting grid
+// Convert position 0 .. 80 to A1 .. H9
+// ivg: Position in a sudoku board 0 to 80
+function ivgToString(ivg){
+  var c = ivg%nbcs;   // c: Column
+  return itoa.charAt(c)+(1+(ivg-c)/nbcs);
+}
+// Give the position of all bit on in a number
+// Example: 3 will give [1,2] Origine n
+function binToArrayN(bin, n){
+  var rsl = [];
+  for (var i=n; bin; i++) {
+    if (1&bin) {
+      rsl.push(i);
+    }
+    bin >>= 1;
+  }
+  return rsl;
+}
+// Give the position of all bit on in a number
+// Example: 3 will give [1,2] Origine 1 not 0
+function binToArray(bin){
+  return binToArrayN(bin,1);
+}
+// Give the position of all bit on in a number
+// Example: 3 will give [0,1] Origine 0 not 1
+function binToArray0(bin){
+  return binToArrayN(bin,0);
+}
+// Give the position of all bit on in a number
+// Example: 3 will give '1,2'
+function binToString(bin){
+  return binToArray(bin).join(',');
+}
+// Count how many bits on in a number
+function bCount(bin){
+  for (var i=0; bin; i++) {
+    bin &= bin-1;
+  }
+  return i;
+}
+// Convert 'Remove Candidate' to a String you can read
+function rcToString(rc){
+  var msg = [];
+  for (var i=0; i<rc.length; i++){
+    msg.push('R:'+ivgToString(rc[i][0])+
+            '('+binToString(rc[i][1])+') '+
+            rc[i][2]);
+  }
+  return msg.join(br)+br;
+}
+// Remove Candidate from cag
+function putrctocag(rc,cag){
+  for (var i=0; i<rc.length; i++){
+    cag[rc[i][0]] &= ~rc[i][1];
+  }
+  return cag;
+}
+// Remove Candidate from pcag
+function putrctopcag(rc,pcag) {
+  for (var i=0; i<rc.length; i++) {
+    var cand = binToArray(rc[i][1]);
+    for (var j=0; j<cand.length; j++) { // for all candidates to remove
+      for (var k=0; k<3; k++) {
+        var ig = iblc[k][rc[i][0]];
+        for (var l=0; l<nbcs && rc[i][0]!=blc[k][ig][l]; l++) {};
+        pcag[k][ig][cand[j]-1] &= ~(1<<l);
+      }
+    }
+  }
+  return pcag;
+}
+// Add an other Remove Possibility to its list
+function addtorc(rc, ivg, bcag, msg){
+  for (var i=0; i<rc.length && bcag!=0; i++){
+    bcag &= ~((rc[i][0]==ivg)?rc[i][1]:0);
+  }
+  if (bcag!=0){
+    rc[rc.length] = [ivg, bcag, msg];
+  }
+  return rc;
+}
+// Find when a block intersect a line or column with alone number,
+// The other part of block line column should be remove.
+// Intersection Removal
+function findblc(rc,cag){
+  var al = []; // All line
+  var ac = []; // All column
+  for (var i=0; i<nbcs; i++){
+    al[i] = [0,0,0];  // Shrink all line in 3 column with OR
+    ac[i] = [0,0,0];  // Same for column
+    for (var j=0; j<dim; j++){
+      for (var k=0; k<dim; k++){
+        al[i][j] |= cag[(k+j*dim)+i*nbcs];
+        ac[i][j] |= cag[i+(k+j*dim)*nbcs];
+      }
+    }
+  }
+  for (var il=0; il<dim; il++){   // Loop on each box
+    for (var ic=0; ic<dim; ic++){ // Inside a box,
+      for (var jl=0; jl<dim; jl++){ // loop on 3 line/col
+        var ol  = 0, oc  = 0, oll = 0, occ = 0;
+        var olc = al[jl+il*dim][ic];  // Intersec line
+        var ocl = ac[jl+il*dim][ic];  // Intersec Column
+        for (var k=0; k<dim; k++){    // Compress the other
+          if (ic!=k ){                // column with OR
+            ol  |= al[jl+il*dim][k];
+            oc  |= ac[jl+il*dim][k];
+          }
+          if (jl!=k){                 // Column 
+            oll |= al[k+il*dim][ic];
+            occ |= ac[k+il*dim][ic];
+          }
+        }                             // All intersec Line
+        var toll = (olc & ~ol) & oll; // not in line but on box
+        var tol  = (olc & ~oll) & ol; // not in box but in line
+        var lm   = 'should be in '+
+                      ivgToString(  ic*dim+(jl+il*dim)*nbcs)+':'+
+                      ivgToString(2+ic*dim+(jl+il*dim)*nbcs);
+        var tocc = (ocl & ~oc) & occ;
+        var toc  = (ocl & ~occ) & oc;
+        var cm   = 'should be in '+
+                      ivgToString((jl+il*dim)+(  ic*dim)*nbcs)+':'+
+                      ivgToString((jl+il*dim)+(2+ic*dim)*nbcs);
+        for (var k=0; k<dim; k++){
+          for (var kc=0; kc<dim; kc++){
+            var ivg = (kc+ic*dim)+(k+il*dim)*nbcs;
+            rc = addtorc(rc, ivg, (jl!=k) && (toll&cag[ivg]), lm);
+            ivg = (kc+k*dim)+(jl+il*dim)*nbcs;
+            rc = addtorc(rc, ivg, (ic!=k) && (tol &cag[ivg]), lm);
+            ivg = (k+il*dim)+(kc+ic*dim)*nbcs;
+            rc = addtorc(rc, ivg, (jl!=k) && (tocc&cag[ivg]), cm);
+            ivg = (jl+il*dim)+(kc+k*dim)*nbcs;
+            rc = addtorc(rc, ivg, (ic!=k) && (toc &cag[ivg]), cm);
+          }
+        }
+      }
+    }
+  }
+  return rc;
+}
+// Find n cells with n same number alone or with other in a set
+// Naked(alone) or hiddem(!alone) 2 or 3 or ... n 
+function findn(rc,cag,n,mode){
+  var alone     = mode=='alone';         // Pair without other in a cell
+  for (var l=0; l<nbcg; l++) {           // For all cells
+    if (bCount(cag[l]) >= 2){            // Need at least 2 numbers in a cell
+      for (var k=0; k<3; k++) {          // For all block line column
+        var blcset = blc[k][iblc[k][l]]; // Find a block line column number for l cell
+        var sp = blcset.indexOf(l);      // Start the paire sequence with L cell
+        var p  = [sp,sp+1,sp+2,sp+3,sp+4].slice(0,n); // And it next one
+        do {
+          // Simple validation for this combinaison
+          for (var i=0,bor=0; i<n && bCount(cag[blcset[p[i]]])>=2; i++) {
+            bor |= cag[blcset[p[i]]];     // Every number in a group at p[i]
+          }
+          if (i==n) {                     // All p[i] in a group have 2 or more candidates
+            if (!alone) {                 // For hidden paire remove every number
+              for (var i=0; i<nbcs; i++){ // that is not on pair cells
+                if (!p.includes(i)) {
+                  bor &= ~cag[blcset[i]]; // keep only the one on P
+                }
+              }
+            }
+            if (bCount(bor)==n) {         // At the end we should have n number left
+              var ps = [];                // Build a display to show what it is about
+              for (var i=0; i<n; i++) {
+                ps[i] = ivgToString(blcset[p[i]]);
+              }
+              var msg = 'P:('+ps.join(',')+')=('+binToString(bor)+')';
+              if (alone) {                     // Naked pair
+                for (var i=0; i<nbcs; i++){    // Remove pair number on other cells
+                  if (!p.includes(i) && bor&cag[blcset[i]]){ // Found something to remove
+                    rc = addtorc(rc, blcset[i], bor&cag[blcset[i]], msg);
+                  }
+                }
+              } else {                         // Hidden pair
+                for (var i=0; i<n; i++){       // Remove everything that is not on Pair
+                  if (cag[blcset[p[i]]]&~bor){ // Found something to remove
+                    rc = addtorc(rc, blcset[p[i]], cag[blcset[p[i]]]&~bor, msg);
+                  }
+                }
+              }
+            }
+          }
+        } while (nComb(p));  // Try a new combinaison
+      }
+    }
+  }
+  return rc;
+}
+// Find a combinaison of n number from 0 to nbcs
+function nComb(p) {
+  var n = p.length-1;
+  for (var i=n; i&&p[i]>=nbcs+i-n-1; i--) {};
+  p[i]++;
+  for (var j=i; j<n; j++) {p[j+1] = p[j]+1};
+  return (p[n]<nbcs)?p:null;
+}
+function arrayToBin(p) {
+  var bin = 0;
+  for (var i=0; i<p.length; i++) {
+    bin |= 1<<p[i];
+  }
+  return bin
+}
+// X-Wing, SwordFish and JellyFish: xwn
+// Find at least two cells with one number in n Lines/Columns with the same n Columns/Lines
+// other number in Column/Lines can be remove
+function findxwn(rc,cag,n) {
+  for (var k=1; k<3; k++) {            // for all line and column
+    var p = [0,1,2,3,4,5].slice(0,n);  // Starting combinaison
+    do {                               // For all combinaison of n line/col
+      for (var i=0; i<nbcs; i++) {     // For all number
+        var orCand = 0;                // For all line/col, find all Col/line for n
+        var pcand  = 0;
+        for (var j=0; j<n && bCount(pcand=pcag[k][p[j]][i])>=2; j++) {
+          orCand |= pcand;
+        };
+        if (j==n && bCount(orCand)==n) {
+          var msg = k==1?' Lines':' Columns';
+          var arCol = binToArray0(orCand);  // It is an XWingn, something to remove?
+          var swlc  = k==1?2:1             // We flip from line/col to Col/line
+          for (var j=0; j<n; j++) {        // For all n columns
+            var binLine = pcag[swlc][arCol[j]][i];
+            var bm      = binLine&~arrayToBin(p);       // Remove what is not in xwingn
+            if (bm) {
+              var abm = binToArray0(bm);
+              var al  = (k==1)?p:arCol;
+              var ac  = (k==1)?arCol:p;
+              var msg  = ['XWing','Sword Fish','Jelly Fish'][n-2]+' '+
+                         'L('+al.map(x=>x+1).join(',')+') '+
+                         'C('+ac.map(x=>itoa[x]).join(',')+')';
+              for (var m=0; m<abm.length; m++) {
+                rc = addtorc(rc, blc[swlc][arCol[j]][abm[m]], 1<<i, msg);
+              }
+            }
+          }
+        }
+      }
+    } while (nComb(p));
+  }
+  return rc;
+}
+// Add this number to a list of possible number we can play
+function addtopn(pn,ivg,c,msg){
+  if (pn !== undefined) {
+    for (var i=0; i<pn.length && pn[i][0]!=ivg; i++){};
+    if (i==pn.length){
+      pn[i] = [ivg,c,msg];
+    } else if (pn[i][1]==c) {
+      pn[i][2] += msg;
+    } else {  // Cannot put two different numbers at the same place
+      pn = undefined;
+    }
+  }
+  return pn;
+}
+// Check if there is any cell with one possible number
+function aloneInCell(cag,pn){
+  for (var i=0; i<nbcg && pn; i++) {
+    if (1==bCount(cag[i])) {
+      pn = addtopn(pn,i,binToArray(cag[i])[0],'.');
+    }
+  }
+  return pn;
+}
+function aloneInSet(pcag,pn) {
+  for (var k=0; k<3 && pn; k++) {
+    for (var i=0; i<nbcs && pn; i++) {
+      for (var j=0; j<nbcs && pn; j++) {
+        var alljnum = binToArray0(pcag[k][i][j]);
+        if (alljnum.length==1) {
+          pn = addtopn(pn,blc[k][i][alljnum[0]],j+1,'O-|'.charAt(k));
+        }
+      }
+    }
+  }
+  return pn;
+}
+//  Check if we can place this number at that place
+function validmove(ivg,value,sg,cag){
+  var msg = '';
+  var ac  = sg.charAt(ivg);
+  if (ac != ' ') {
+    msg = (value != ac)?'You can not change initial values':'';
+  } else {
+    var iv = (value in ival)?ival[value]:nbcg;
+    if (iv > nbcs) {
+      msg = 'Value from 1 to '+aval[nbcs];
+    } else if (iv!=0 && !(cag[ivg] & bval[iv])) {
+      msg = 'Not a possible choice';
+    }
+  }
+  return msg;
+}
+// Add this number to a list of Number already Placed
+function addTonp(ivg, num) {
+  if (num != ' ') {
+    np[inp]   = [ivg, num];
+    inp++;
+    np.length = inp;
+    shownp();
+  }
+}
+// If you type a wrong number, I replace it with the value we had before
+function oldvalue(ivg){
+  return (sg.charAt(ivg)!=' ')?sg.charAt(ivg):cg.charAt(ivg);
+}
+// Find solutions for this Current Grid
+function findSol(cg) {
+  var sol = '';
+  ocag = crCa(cg);
+  cag  = crCa(cg);
+  pcag = crCaPo(cag);
+  do {
+    var pn = [];             // Possible Number
+    pn = aloneInSet(pcag,pn);
+    pn = aloneInCell(cag,pn);
+    sol += pnToString(pn);
+    if (pn.length == 0) {
+      var rc = [];
+      rc = findblc(rc,cag);  // Intersec is easier that pair
+      if (rc.length==0) {
+        rc = findn(rc,cag,2,'alone');
+        if (rc.length==0){
+          rc = findn(rc,cag,2,'with');
+          if (rc.length==0){
+            rc = findn(rc,cag,3,'alone');
+            if (rc.length==0) {
+              rc = findn(rc,cag,3,'with');
+              if (rc.length==0) {
+                rc = findxwn(rc, pcag, 2);
+                if (rc.length==0) {
+                  rc = findxwn(rc, pcag, 3);
+                  if (rc.length==0) {
+                    rc = findxwn(rc, pcag, 4);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      if (rc.length != 0) {
+        sol += rcToString(rc);
+        putrctocag(rc,cag);
+        putrctopcag(rc,pcag);
+      }
+    }
+  } while (pn.length==0 && rc.length!=0);
+  if (pn.length==0 && rc.length==0){
+    for (var i=0; i<nbcs && cag[i]==0; i++) {};
+    sol += (i!=nbcs)?'unsolved':'solved';
+  }
+  return sol;
+}
+// When you type a number, I start here.
+//  i: Line, j:column, value: number you type
+function onkeyup(i,j,value) {
+  var ivg = j+i*nbcs;
+  var sol = '';
+  value   = value.trim().toUpperCase();
+  value   = (value=='')?' ':value.charAt(0);
+  var msg = validmove(ivg, value, sg,cag);
+  if (msg!=''){
+    value = oldvalue(ivg);
+    msg += br;
+  } else {
+    if (entry) {
+      boardFocusNextSpace(i,j);
+    }
+    msg  = 'Move accepted';
+    addTonp(ivg, value);  // Add to our list of number put on a grid
+    cg   = putAMoveTocg(cg,ivg,value);
+    var cell = document.getElementById('board')
+                   .getElementsByTagName('table')[0]
+                   .getElementsByTagName('tbody')[0]
+                   .getElementsByTagName('tr')[i+1]
+                   .getElementsByTagName('td')[j+1];
+    if (cell.getElementsByTagName('div').length) {
+      cell.removeChild(cell.getElementsByTagName('div')[0]);
+    }
+    cell.getElementsByTagName('input')[0].style.opacity = '';
+    var sol = findSol(cg);
+  }
+  if (showCagFlag) {
+    showCag();
+  }
+  document.getElementById('msg').innerHTML = msg;
+  document.getElementById('sol').innerHTML = 'Solution'+br+sol;
+  if (document.getElementById('url').innerHTML == 'Hide URL') {
+    document.getElementById('showURL').innerHTML = setLink('board', cg.replace(/ /g,'0'));
+  }
+  return value;
+}
+// Create an HTML board with this Sudoku Problem
+// And assign a onkeyup function to every cell
+function crGrid(target) {
+  var board = document.createElement('table');
+  var row, cell, input, field;
+  for (var i=0; i <= nbcs; i++) {
+    row = board.insertRow(i);
+    if(i%dim == 1) {
+      row.className = 'box';
+    }
+    for(var j=0; j <= nbcs; j++) {
+      cell = row.insertCell(j);
+      if(j%dim == 1) {
+        cell.className = 'box ';
+      }
+      if (i==0){
+        cell.innerHTML = (' '+itoa).charAt(j);
+        cell.className += 'coor ';
+      } else if (j==0){
+        cell.innerHTML = i;
+        cell.className += 'coor';
+      } else {
+        input = cell.appendChild(document.createElement('input'));
+        input.i = i-1;
+        input.j = j-1;
+        input.onkeyup = function(){
+          this.value = onkeyup(this.i, this.j, this.value);
+        }
+      }
+    }
+  }
+  target.appendChild(board);
+}
+// Put numbers in a HTML Sudoku problem
+function setGrid(sg){
+  var rows = document.getElementById('board')
+                .getElementsByTagName('table')[0]
+                .getElementsByTagName('tbody')[0]
+                .getElementsByTagName('tr'); 
+  for (var l=0; l<nbcs; l++){
+    for (var c=0; c<nbcs; c++) {
+      var inObj = rows[l+1].getElementsByTagName('td')[c+1]
+               .getElementsByTagName('input')[0];
+      inObj.value = sg.charAt(c+nbcs*l);
+      inObj.style.opacity = '';
+    }
+  }
+}
+// Change the Sudoku Board with a new move
+function putAMoveTocg(cg,ivg,c){
+  return cg.substr(0,ivg) + c + cg.substr(ivg+1);
+}
+// Remove candidates
+function putAMoveTocag(cag,ivg,c){
+  cag[ivg] = 0;
+  var bp = ~bval[c];
+  for (var k=0; k<3; k++) {
+    var iiblc = iblc[k][ivg];
+    for (var i=0; i<nbcs; i++) {
+      cag[blc[k][iiblc][i]] &= bp;
+    }
+  }
+  return cag;
+}
+// Remove candidates
+function putAMoveTopcag(pcag,ivg,c,cag) {
+  // TO DO for just one number using pcag
+  return crCaPo(cag);
+}
+// crCa: Create a Possibility board for the Game
+function crCa(sg){
+  var cag = [];
+  for (var i=0; i<nbcg; i++) {
+    cag[i] = 0x1ff;
+  };
+  for (var ivg=0; ivg<nbcg; ivg++){
+    var c = sg.charAt(ivg);
+    if (c!=' '){
+      cag = putAMoveTocag(cag,ivg,c);
+    };
+  };
+  return cag;
+}
+// Rotate line/column Candidate Set to number position
+function crCaPo(cag) {
+  var pcag;
+  if (cag) {
+    pcag = [];
+    for (var k=0; k<3; k++) {
+      pcag[k] = [];
+      for (var i=0; i<nbcs; i++) {
+        var rcs = Array(nbcs).fill(0);
+        var set = blc[k][i];
+        for (var j=0; j<nbcs; j++) {
+          var cc = cag[set[j]];
+          for (var l=0; (l<nbcs) && cc; l++) {
+            rcs[l] |= (1&(cc>>l))<<j;  // Change line/column number
+          }
+        }
+        pcag[k][i] = rcs;
+      }
+    }
+  }
+  return pcag;
+}
+// Convert a move to a string you can read
+function pnToString(pn){
+  var msg = '';
+  for (var i=0; i<pn.length; i++){
+    var c = pn[i][0]%nbcs;
+    var l = (pn[i][0]-c)/nbcs;
+    var sp = itoa.charAt(c)+(l+1);
+    msg += sp+'('+pn[i][1]+')'+pn[i][2]+br;
+  }
+  return msg;
+}
+function shownp() {
+  var mo = '';
+  for (var i=0; i<np.length; i++) {
+    mo += (inp==i?'>':sp)+ivgToString(np[i][0])+'='+np[i][1]+br;
+  }
+  document.getElementById('move').innerHTML = mo;
+}
+//
+//  Begin Here
+//
+// Some Sudoku problem to solve
+//  sg = ' 41 2 89 5     6 22 8   7 5    8     1 564 7   9   6  8  213  71       6 2     3 ';
+//  sg = ' 41 2589395    4622 8   715    8 3  312564978 89   6  8962135 71     286 2    139';
+//  sg = ' 92 3 81 45  189 21 8 296      5 2  2  86 1  5   4 3  847396521961 7  83325 8 769';
+//       ' 92 3 81 45  189 21 8 296      5 2  2  86 1  5   4 3  847396521961 7  83325 8 769';
+//       ' 41 2589395    4622 8   715    8 3  312564978 89   6  8962135 71     286 2    139';
+//  sg=  '   9   2  45 2  8  6    1    4  1  5  2 3  6139  5     7 8   9  1      4   6     '; // hard one found
+//  sg = '1    2  8   9  7   674  1  6     54           98     1  3  185   9  5   4  7    2'
+//  sg = '   841263 86     5   65  78 4  258 66   187 28   673    8 3652  9  8 63 36 5   8 '
+//  sg = ' 374816 9 9  27 388  3 9    19873 6 78   2 93   9 487    295  6   1369  962748315'; //  XWing H7=8 C8=8   
+//  sg = ' 374816 9 9  27 388  3 9    19873 6 78   2 93   9 487    295 86  81369  962748315'; 
+//  sg = '  8 7   939 18   67  9   824 38 921782 7  9341793245686    8 93 3 6978 198  3 6 5'; // XWing Rotated
+//  sg = '   841263 86     5   65  78 4  258 66   187 28   673    8 3652  9  8 63 36 5   8 ';  // Intersec before pair
+// New board to load
+function load(lsg) {
+  sg   = lsg;
+  cg   = sg;           // cg: current position with move added, sg: starting position
+  cag  = crCa(cg);     // cag: board of candidate
+  ocag = crCa(cg);     // cag: board of candidate before update
+  pcag = crCaPo(cag);  // Candidate Position
+  
+  setGrid(cg);         // Put numbers in Grid
+  document.getElementById('sol').innerHTML    = 'Solution'+br+findSol(cg);  // display moves
+}
+// Webpage entry point
+function init() {
+  // Build Block Line Column table and it index
+  for (var i=0; i<nbcg; i++) {
+    var c = i%nbcs;
+    var l = (i-c)/nbcs;
+    var b1 = (c-c%dim)/dim + (l-l%dim);
+    var b2 = c%dim + dim*(l%dim);
+    blc[0][b1][b2] = i;
+    blc[1][l][c] = i;
+    blc[2][c][l] = i;
+    iblc[0][i]   = b1;
+    iblc[1][i]   = l
+    iblc[2][i]   = c;
+  };
+  sg = getPrm('board');
+  if (sg==='') {
+    sg = ' 3 48 6 9    27   8  3      19      78   2 93     487      5  6   13    9 2 48 1 ';
+  } else {
+    sg = sg.replace(/0/g,' ');
+  }
+  crGrid(document.getElementById('board'));  // Create a Sudoku board
+  load(sg);  
+}
+function boardFocus(i,j){
+  document.getElementById('board')
+          .getElementsByTagName('table')[0]
+          .getElementsByTagName('tbody')[0]
+          .getElementsByTagName('tr')[i+1]
+          .getElementsByTagName('td')[j+1]
+          .getElementsByTagName('input')[0]
+          .focus();
+}
+function boardFocusNextSpace(i, j) {
+  for (var k=1+j+i*nbcs; k<nbcg && cg[k]!=' '; k++) {};
+  if (k<nbcg) {
+    var c = k%nbcs;   // c: Column
+    boardFocus((k-c)/nbcs, c);
+  }
+}
+function startBoard(sg) {
+  sg = sg.replace(/\n/g,'');
+  if (sg && sg.length==nbcg) {
+    document.getElementById('boardInput').value = '';
+    load(sg);
+    showCag();
+  } else {
+    document.getElementById('msg').innerHTML = 'Invalid board: '+br;
+    if (sg.length!=nbcg) {
+      document.getElementById('msg').innerHTML += 'Wrong length: '+sg.length+br;
+    }
+  }
+}
+function clearBoard() {
+  entry = true;
+  startBoard(' '.repeat(81));
+}
+function loadBoard(sg) {
+  sg = document.getElementById('boardInput').value;
+  startBoard(sg);
+}
+function formatText() {
+  var txt = document.getElementById('boardInput').value;
+  document.getElementById('boardInput').value = txt.match(/(.{1,9})/g).join('\n');
+}
+// Show cnadidates on Grid Screen
+function showCag() {
+  var rows = document.getElementById('board')
+                     .getElementsByTagName('table')[0]
+                     .getElementsByTagName('tbody')[0]
+                     .getElementsByTagName('tr');
+  for (var i=0; i<nbcs; i++) {
+    for ( var j=0; j<nbcs; j++) {
+      var ivg = j+i*nbcs;
+      var cell = rows[i+1].getElementsByTagName('td')[j+1];
+      if (showCagFlag && cg.charAt(ivg)==' ') {
+        var txt = '';
+        for (var k=1; k<=nbcs; k++) {
+          // TO DO Use rc
+          if (ocag[ivg]&bval[k]) {
+            if (cag[ivg]&bval[k]) {
+              txt += k;
+            } else {
+              txt += '<span class="redsm">'+k+'</span>';
+            }
+          } else {
+            txt += sp;
+          }
+          //txt += (ocag[ivg]&bval[k])?((cag[ivg]&bval[k])?k:('<div class="redsm">'+k+'</div¨>')):sp;
+          txt += (k==3||k==6)?br:'';
+        }
+        if (!cell.getElementsByTagName('div').length) {
+          var div  = document.createElement('div');
+              div.className = 'smtxt';
+          cell.insertBefore(div, cell.getElementsByTagName('input')[0]);
+        }
+        cell.getElementsByTagName('input')[0].style.opacity = '0.2';
+        cell.getElementsByTagName('div')[0].innerHTML       = txt;
+      }
+      if ((!showCagFlag || cg.charAt(ivg)!=' ') && 
+           cell.getElementsByTagName('div').length)  {
+        cell.removeChild(cell.getElementsByTagName('div')[0]);
+        cell.getElementsByTagName('input')[0].style.opacity = '';
+      }
+    }
+  }
+}
+function showCand() {
+  showCagFlag = !showCagFlag;
+  document.getElementById('showCand').innerHTML = showCagFlag?'Hide Candidates':'Show Candidates';
+  showCag();
+}
+function tips() {
+  if (document.getElementById('sol').style.display == 'none') {
+    document.getElementById('tips').innerHTML = 'Hide Tips';
+    document.getElementById('sol').style.display = 'block';
+  } else {
+    document.getElementById('sol').style.display = 'none';
+    document.getElementById('tips').innerHTML = 'Show Tips';
+  }
+}
+// Select text in a div
+function selectText(containerid) {
+  window.getSelection()
+    .selectAllChildren(
+      document.getElementById(containerid) 
+    );
+}
+// Create a URL link with a parameter for board
+function setLink(prmName, prmVal) {
+  var rsl   = [];
+  var found = false;
+  location.search
+    .substr(1)
+    .split('&')
+    .forEach(function (item) {
+    console.log(item);
+      var tmp = item.split('=');
+      if (tmp[0] !== prmName) {
+        rsl.push(item);
+      }
+    });
+  rsl.push(prmName+'='+encodeURIComponent(prmVal));
+  return location.origin+location.pathname+'?'+rsl.join('&');
+}
+// Read a URL parameter
+function getPrm(prmName) {
+  var rsl = '';
+  location.search
+      .substr(1)
+      .split('&')
+      .forEach(function (item) {
+        var tmp = item.split('=');
+        if (tmp[0] === prmName) rsl = decodeURIComponent(tmp[1]);
+      });
+  return rsl;
+}
+function url() {
+  if (document.getElementById('url').innerHTML == 'Hide URL') {
+    document.getElementById('url').innerHTML     = 'Show URL';
+    document.getElementById('showURL').innerHTML = '';
+  } else {
+    document.getElementById('url').innerHTML = 'Hide URL';
+    document.getElementById('showURL').innerHTML = setLink('board', cg.replace(/ /g,'0'));
+  }
+}
+// Create a PDF file
+function pdf() {
+  var html = document.getElementById('board');
+  console.log(html);
+  var doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'in',
+    format: 'letter'
+  });
+  doc.setFont("courier");
+  doc.fromHTML(html);
+  doc.save('Sudoku.pdf');
+}
+// Shuffle an array
+function shuffle(arr) {
+  return arr.sort(()=>Math.random()-0.5);
+}
+// Valid a number(c) at ivg 
+function validIvg(sg,ivg,c) {
+  var valid = true;
+  for (var k=0; k<3 && valid; k++) {
+    var blcSet = blc[k][iblc[k][ivg]];
+    for (var i=0; i<nbcs && valid; i++) {
+      if (sg.charAt(blcSet[i])==c) {
+        valid = false;
+      }
+    }
+  }
+  return valid
+}
+// Find a completed sudoku
+function fastComp(sg,ivg) {
+  if (ivg < nbcg) {
+    var fg = '';
+    var ic = shuffle(Array(nbcs).fill(0).map((x,i)=>i+1));
+    for (var i=0; i < nbcs && !fg; i++) {
+      if (validIvg(sg,ivg,ic[i])) {
+        var tg = putAMoveTocg(sg,ivg,ic[i]);
+            fg = fastComp(tg, ivg+1);
+      }
+    }
+  } else {
+    fg = sg;
+  }
+  return fg;
+}
+// Find how many solution Sudoku
+function countSolution(sg, maxCount, ivg=0) {
+  var count = 0;
+  if (ivg<nbcg) {
+    if (sg.charAt(ivg)==' ') {
+      for (var i=1; i<=nbcs && count<maxCount; i++) {
+        if (validIvg(sg,ivg,i)) {
+          sg = putAMoveTocg(sg,ivg,i);
+          count += countSolution(sg,maxCount,ivg+1);
+        }
+      }
+      sg = putAMoveTocg(sg,ivg,' ');
+    } else {
+      count += countSolution(sg,maxCount,ivg+1);
+    }
+  } else {
+    count = 1;
+  }
+  return count;
+}
+function validGrid() {
+  var nbSol = countSolution(cg, 1000);
+  var msg   = (nbSol>=1000)?'Over 1000 solutions<br >':
+               (nbSol+' solution'+((nbSol==1)?'':'s')+' for<br >this Sudoku Puzzle');
+  document.getElementById('msg').innerHTML = msg;
+}
+// new Easy puzzle SG
+function newSg(sDiff) {
+  // Add numbers to grid
+  function addNumbers(sg, cag, pcag, sDiff) {
+    var easy = sDiff=='easy';
+    var gotH = false;
+        isH  = false;
+    do {
+      var pn = [];             // Possible Number
+      var rc = [];             // Removable candidate
+      pn = aloneInSet(pcag,pn);
+      pn = aloneInCell(cag,pn);
+      for (var i=0; i<pn.length; i++) {
+        sg   = putAMoveTocg(sg,pn[i][0],pn[i][1]);
+        cag  = putAMoveTocag(cag,pn[i][0],pn[i][1]);
+        pcag = putAMoveTopcag(pcag,pn[i][0],pn[i][1],cag);
+      }
+      if (!pn.length  && !easy) {
+        isH |= gotH;
+        gotH = false;
+        rc = findn(rc,cag,2,'alone');
+        if (rc.length==0) {
+          rc = findn(rc,cag,2,'with');
+        }
+        if (rc.length) {
+          putrctocag(rc,cag);
+          putrctopcag(rc,pcag);
+          gotH = true;
+        }
+      }
+    } while (pn.length || (rc.length && !easy));
+    return sg;
+  }
+  
+  var isH    = false;
+  var foundH = false;
+  var easy   = sDiff=='easy';
+  var fg     = fastComp(' '.repeat(81),0);
+  var sCount = 500;  // try n times to find a sudoku
+  var count  = sCount;
+  do {
+    var sg     = fg;
+    var remCel = shuffle(Array(nbcg).fill(0).map((x,i)=>i));
+    for (var i=0; i < nbcg; i++) {
+      var ivg   = remCel[i];
+      var v     = sg.charAt(ivg);
+      var sg    = putAMoveTocg(sg, ivg,' ');
+      var tg    = undefined;
+      var cag  = crCa(sg);
+      var pcag = crCaPo(cag);
+      var tg = addNumbers(sg,cag,pcag, sDiff);
+      if (!tg || tg!=fg) { // if I cannot find a solution
+        isH = false;
+        sg = putAMoveTocg(sg,ivg,v);   // put it back
+      }
+      foundH |= isH;
+    }
+    count--;
+  } while (!easy && !foundH && 0<count);
+  var msg  = 'Found an '+sDiff+' <br>Sudoku Puzzle<br>';
+      msg += (!easy)?' after '+(sCount-count)+' trie(s)<br>':'';
+      msg += 'Click a cell<br>and type a number';
+  document.getElementById('msg').innerHTML = msg;
+  return sg;
+}
+  </script>
