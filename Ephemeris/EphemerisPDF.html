@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<meta charset="UTF-8">
+<html>
+<head>
+<style type="text/css">
+  #prms div, button {
+    float: left;
+    clear: both;
+    padding-right: 10px;
+  }
+  #prms input, select {
+    float: left;
+  }
+</style>
+</head>
+<body style="font-family: monospace;" onLoad="init();">
+  <h2 id="title"></h2>
+  <div id="prms">
+    <div id="inAn"></div><input type="text" id="inAnVa" value=""></input>
+    <div id="inVi"></div><select id="inViSel" onchange="viChanged(this)"></select>
+    <div id="inLo"></div><input type="text" id="inLoVa" value=""></input>
+    <div id="inLa"></div><input type="text" id="inLaVa" value=""></input>
+    <div id="inFh"></div><input type="text" id="inFhVa" value=""></input>
+  </div>
+  <button type="button" id="bcre" onclick="create()"></button>
+  <pre>
+  <div id="msg"></div>
+  </pre>
+  <script src="https://unpkg.com/jspdf@latest/dist/jspdf.min.js"></script>
+  </script>
+  <script>
+  var width     = 11.0;
+  var height    =  8.5;
+  const lrPad     =  0.25;
+  const lrgPad    = lrPad+0.5;
+  const tbPad     =  0.25;
+  const tbgPad    = tbPad+0.5;
+  const nbHours   = 24.0;
+  const nbMonth   = 12.0;
+  const plaIndex  = 7;   // Put a planet's name every n weeks
+  var nbWeek      = 52.0;
+  var nbDayYear   = 365;  // or 366, see Create()
+  const lnWidth   = 0.01;
+  const fontSize  = 10;
+  const plaFSize  = 5;
+  //var fontStyle = 'helvetica';
+  const fontStyle = 'times';
+  const fontNumber = 'courier';
+  var tWidth    = width  - 2.0*lrgPad;
+  var tHeight   = height - 2.0*tbgPad;
+  const sp = '  ';
+  const nl = '<br />';
+  var lang;
+
+  const DPI      = 2.0*Math.PI;
+  const DegToRad = DPI/360.0;
+  const HrsToRad = DPI/24.0;
+  const RadToDeg = 360.0/DPI;
+  const RadToHrs = 24.0/DPI;
+  const DegToHrs = 24.0/360.0;
+  const JJ2000   = 2451545.0; // JJ de J2000 ecliptique
+  const JJ1900   = 2415020.0;
+
+  const enWt = 'Annual Astronomy Graphic';
+  const frWt = 'Annuaire Astronomique Graphique';
+  const langTxt = {
+    en: {wt:enWt, pt:enWt+' for ',
+         c:'Create', v:'City',  ma:'Year between 1900 and 2100',
+         lo:'Longitude', la:'Latitude', fh:'Time zone', 
+         y:'Year', m:'Month', j:'Day', mn:'Midnight', md:'Noon',
+         mt:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+         pn:['Sun','Mercury','Venus','Mars','Jupiter','Saturn']},
+    fr: {wt:frWt, pt:frWt+' pour ',
+         c:'Créer',  v:'Ville', ma:'Année entre 1900 et 2100',
+         lo:'Longitude', la:'Latitude', fh:'Fuseau horaire', 
+         y:'Année', m:'Mois', j:'Jour', mn:'Minuit', md:'Midi',
+         mt:['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aou','Sep','Oct','Nov','Dec'],
+         pn:['Soleil','Mercure','Vénus','Mars','Jupiter','Saturne']}
+  }
+  const villes = {
+    Penticton: {lo:-119.589615, la:49.489536, fh: -8},
+    Vancouver: {lo:-123.116226, la:49.246292, fh: -8},
+    Montreal:  {lo: -73.584742, la:45.502639, fh: -5},
+    Other:     {lo: '',         la:'',        fh:''}
+  }
+  const dashNo  = [false, false];
+  const dashTra = dashNo;
+  const dashLev = [false,true];
+  const dashCou = [true,false];
+  const dashLen = 0.05;
+  const moDit     = 0.04;
+  const moDah     = 3*moDit;
+  
+  function Soleil(t) {
+  // ln = longitude du noeud ascendant = 0
+  // ex = Excentricite
+  // dga = Diatance terre-soleil moyenne en UA
+  // obm = Obliquité moyenne 23' ...
+    this.ind = 0;
+    this.dash = [];
+    this.ray = 0.00465047;
+    this.ln  = 0 // uniquement le soleil
+    this.ex  = 0.01675104  - 0.0000418*t - 0.000000126*t*t;
+    this.dga = 1.0000002;
+    this.cas = -18.0*DegToRad; // Crépuscule astronomique
+    this.cna = -12.0*DegToRad; // Crépuscule nautique
+    this.cci =  -6.0*DegToRad; // Crépuscule civil
+    this.obm = DegToRad*(23.4522944 - 0.0130125*t - 0.1638e-5*t*t + 0.503e-6*t*t*t);
+    this.yea = 360/36000.768925; // Year in century
+    this.reCalc = function(t) {
+    // lm = longitude moyenne
+    // am = Anomalie  moyenne
+      this.lm  = DegToRad*((279.6966778 + 36000.768925*t + 0.0003025*t*t) % 360);
+      this.am  = DegToRad*((358.47583   + 35999.04975 *t - 0.00015  *t*t - 0.0000033*t*t*t) % 360);
+    }
+  }
+  function Mercure(t) {
+  // dga = Demi grand axe
+  // ex = Excentricite
+  // in = inclinaison
+  // ap = argument du périgé
+  // ln = longitude du noeud ascendant
+    this.ind = 1;
+    this.dash = [moDah, moDit, moDah, moDit, moDit, moDit]; // me = dah dah dit
+    this.dga = 0.3870986;
+    this.ex  = 0.20561421 + 0.00002046*t - 0.0000003*t*t;
+    this.in  = DegToRad*( 7.002881 + 0.0018608*t - 0.0000183*t*t);
+    this.ap  = DegToRad*(28.753753 + 0.3702806*t + 0.0001208*t*t);
+    this.ln  = DegToRad*(47.145944 + 1.1852083*t + 0.0001739*t*t);
+    this.yea = 360/149474.07078; // Year in century
+    this.reCalc = function(t) {
+    // lm = longitude moyenne
+    // am = Anomalie  moyenne
+      this.lm  = DegToRad*((178.179078 + 149474.07078*t + 0.0003011*t*t) % 360);
+      this.am  = DegToRad*((102.27938  + 149472.51529*t + 0.000007 *t*t) % 360);
+    }
+  }
+  function Venus(t) {
+    this.ind = 2;
+    this.dash = [moDit, moDit, moDit, moDit, moDit, moDit, moDah, moDit]; // v = dit dit dit dash
+    this.dga = 0.7233316;
+    this.ex  = 0.00682069 - 0.00004774*t + 0.000000091*t*t;
+    this.in  = DegToRad*(  3.393631 + 0.0010058*t - 0.000001 *t*t);
+    this.ap  = DegToRad*( 54.384186 + 0.5081861*t - 0.0013864*t*t);
+    this.ln  = DegToRad*( 75.779647 + 0.8998500*t + 0.0004100*t*t);
+    this.yea = 360/58519.21191; // Year in century
+    this.reCalc = function(t) {
+      this.lm  = DegToRad*((342.767053 + 58519.21191*t + 0.0003097*t*t) % 360);
+      this.am  = DegToRad*((212.60322  + 58517.80387*t + 0.001286 *t*t) % 360);
+    }
+  }
+  function Mars(t) {
+    this.ind = 3;
+    this.dash = [moDah, moDit, moDah, moDit, moDit, moDit, moDah, moDit]; // ma = dah dah dit dah
+    this.dga = 1.5236883;
+    this.ex  = 0.0933129 +  0.000092064*t - 0.000000077*t*t;
+    this.in  = DegToRad*(   1.850333  -   0.000675*t  + 0.0000126*t*t);
+    this.ap  = DegToRad*( 285.431761  +  1.0697667*t  + 0.0001313*t*t + 0.00000414*t*t*t);
+    this.ln  = DegToRad*(  48.786442  +  0.7709917*t  - 0.0000014*t*t - 0.00000533*t*t*t);
+    this.yea = 360/19141.69551; // Year in century
+    this.reCalc = function(t) {
+      this.lm  = DegToRad*((293.737334 + 19141.69551*t  + 0.0003107*t*t) % 360);
+      this.am  = DegToRad*((319.51913  + 19139.85475*t  + 0.000181 *t*t) % 360);
+    }
+  }
+  function Jupiter(t) {
+    this.ind = 4;
+    this.dash = [moDit, moDit, moDah, moDit, moDah, moDit, moDah, moDit]; // j = dit dah dah dah
+    this.dga = 5.202561;
+    this.ex  = 0.04833475 +  0.00016418*t - 0.0000004676*t*t - 1.7e-9*t*t*t;
+    this.in  = DegToRad*(   1.308736   -  0.0056961*t   + 0.0000039*t*t);
+    this.ap  = DegToRad*( 273.277558   +  0.5994317*t   + 0.00070405*t*t + 0.00000508*t*t*t);
+    this.ln  = DegToRad*(  99.443414   +  1.0105300*t   + 0.00035222*t*t - 0.00000851*t*t*t);
+    this.yea = 360/3036.301986; // Year in century
+    this.reCalc = function(t) {
+      this.lm  = DegToRad*((238.049257 + 3036.301986*t  + 0.0003347*t*t  - 0.00000165*t*t*t) % 360);
+      this.am  = DegToRad*((225.32829  + 3034.69202 *t  + 0.000722 *t*t) % 360);
+    }
+  }
+  function Saturne(t) {
+    this.ind = 5;
+    this.dash = [moDit, moDit]; // s = dit dit dit
+    this.dga = 9.554747;
+    this.ex  = 0.05589232 - 0.0003455*t - 0.000000728*t*t + 7.4e-10*t*t*t;
+    this.in  = DegToRad*(   2.492519   -  0.0039189*t   - 0.00001549*t*t + 0.00000004*t*t*t);
+    this.ap  = DegToRad*( 338.307800   +  1.0852207*t   + 0.00097854*t*t + 0.00000992*t*t*t);
+    this.ln  = DegToRad*( 112.790414   +  0.8731951*t   - 0.00015218*t*t - 0.00000531*t*t*t);
+    this.yea = 360/1223.509884; // Year in century
+    this.reCalc = function(t) {
+      this.lm  = DegToRad*((266.564377 + 1223.509884*t  + 0.0003245*t*t  - 0.0000058*t*t*t) % 360);
+      this.am  = DegToRad*((175.46616  + 1221.55147 *t  + 0.000502 *t*t) % 360);
+    }
+  }
+  function computeRV(objPla) {
+  // ae = Anomalie excentrique
+  // av = Anomalie vrai
+  // am = Anomalie moyenne
+    var aePre = 0.0;
+    var prec  = 1e-10;
+    var count = 10;
+    objPla.ae = objPla.am;
+    do {
+      aePre = objPla.ae;
+      objPla.ae = aePre - (aePre - objPla.ex*Math.sin(aePre) - objPla.am)/(1 - objPla.ex*Math.cos(aePre));
+    } while (Math.abs(objPla.ae-aePre)>prec && count-- >0);
+    objPla.ds = objPla.dga*(1-objPla.ex*Math.cos(objPla.ae));
+    objPla.av = Math.atan2(Math.sqrt(1-objPla.ex*objPla.ex)*Math.sin(objPla.ae), Math.cos(objPla.ae)-objPla.ex);
+    objPla.av = (objPla.av+DPI)%DPI;
+    objPla.lv = (objPla.lm - objPla.am + objPla.av + DPI)%DPI;
+  }
+  function computeLB(objPla) {
+    if (objPla.ln == 0) { // Soleil
+        objPla.loh = (objPla.lm - objPla.am + objPla.av) % DPI;
+        objPla.lah = 0.0;
+    } else {       // Planete
+        objPla.loh = Math.atan2(Math.sin(objPla.ap+objPla.av)*Math.cos(objPla.in),
+                                Math.cos(objPla.ap+objPla.av)) + objPla.ln;
+        objPla.lah = Math.asin(Math.sin(objPla.ap+objPla.av)*Math.sin(objPla.in));
+    }
+    objPla.xh = objPla.ds*Math.cos(objPla.lah)*Math.cos(objPla.loh);
+    objPla.yh = objPla.ds*Math.cos(objPla.lah)*Math.sin(objPla.loh);
+    objPla.zh = objPla.ds*Math.sin(objPla.lah);
+  }
+  function computeAscDecSoleil(objSoleil) {
+    objSoleil.dec = Math.asin(Math.sin(objSoleil.obm)*Math.sin(objSoleil.loh));
+    objSoleil.asc = Math.atan2(Math.sin(objSoleil.loh)*Math.cos(objSoleil.obm), Math.cos(objSoleil.loh));
+    objSoleil.asc = (objSoleil.asc+DPI)%DPI;
+  }
+  function computeAscDec(objPlanet, xh, yh, obm) {
+    objPlanet.xg  = xh + objPlanet.xh;
+    objPlanet.yg  = yh + objPlanet.yh;
+    objPlanet.zg  = objPlanet.zh;
+    objPlanet.log = Math.atan2(objPlanet.yg, objPlanet.xg);
+    objPlanet.lag = Math.atan2(objPlanet.zg, Math.sqrt(objPlanet.xg*objPlanet.xg+objPlanet.yg*objPlanet.yg));
+    objPlanet.dec = Math.asin(Math.sin(objPlanet.lag)*Math.cos(obm) +
+                    Math.cos(objPlanet.lag)*Math.sin(obm)*Math.sin(objPlanet.log));
+    objPlanet.asc = Math.atan2(Math.cos(obm)*Math.sin(objPlanet.log) -
+                    Math.sin(obm)*Math.tan(objPlanet.lag), Math.cos(objPlanet.log));
+  }
+  function equationDuTemps(objSoleil) {
+  // et = equation du temps en radian
+    var y = Math.tan(objSoleil.obm/2);
+    y = y*y;
+    objSoleil.et =  y*Math.sin(2*objSoleil.lm) - 2*objSoleil.ex*Math.sin(objSoleil.am)
+           + 4*objSoleil.ex*y*Math.sin(objSoleil.am)*Math.cos(2*objSoleil.lm)
+           - y*y*Math.sin(4*objSoleil.lm)/2 - 5*objSoleil.ex*objSoleil.ex*Math.sin(2*objSoleil.am)/4;
+  }
+  function computeArcSemi(elevation, obsLat, dec) {
+  // Arc Semi Diurne en radian
+    var cosASD = (Math.sin(elevation) - Math.sin(obsLat)*Math.sin(dec))/(Math.cos(obsLat)*Math.cos(dec));
+    return (-1.0<cosASD && cosASD<1.0)?Math.acos(cosASD):0;
+  }
+  function computeSetRise(objPla, et, lonSoleil, obsLat, obsLon, obsFus) {
+  // asd = Arc Semi diurne
+    if (objPla.ln == 0) { // Soleil
+      objPla.transit = 12 + RadToHrs*(-et - obsLon) + obsFus;
+      objPla.asdCA = computeArcSemi(objPla.cas, obsLat, objPla.dec);  // Crepuscule Astronimique
+      objPla.asdCN = computeArcSemi(objPla.cna, obsLat, objPla.dec);  // Crepuscule Nautique
+      objPla.asdCC = computeArcSemi(objPla.cci, obsLat, objPla.dec);  // Crepuscule Civil
+      objPla.leverCA   = objPla.asdCA?(objPla.transit - RadToHrs*objPla.asdCA):0;
+      objPla.coucherCA = objPla.asdCA?(objPla.transit + RadToHrs*objPla.asdCA):0;
+      objPla.leverCN   = objPla.asdCN?(objPla.transit - RadToHrs*objPla.asdCN):0;
+      objPla.coucherCN = objPla.asdCN?(objPla.transit + RadToHrs*objPla.asdCN):0;
+      objPla.leverCC   = objPla.asdCC?(objPla.transit - RadToHrs*objPla.asdCC):0;
+      objPla.coucherCC = objPla.asdCC?(objPla.transit + RadToHrs*objPla.asdCC):0;
+    } else {
+      objPla.transit = (RadToHrs*objPla.asc -12 - RadToHrs*lonSoleil + obsFus - RadToHrs*obsLon + 72)%24;
+      objPla.asd     = RadToHrs*computeArcSemi(-0.5667*DegToRad, obsLat, objPla.dec);
+      objPla.lever   = (objPla.transit - objPla.asd + 24)%24;
+      objPla.coucher = (objPla.transit + objPla.asd + 24)%24;
+    }
+  }
+  function drawGrid(doc, annee, ville) {
+    var titleSize = fontSize+5;
+    var titleText = langTxt[lang].pt + ville + ', ' + annee;
+    doc.setFontSize(titleSize);
+    doc.text(lrgPad+(tWidth-doc.getTextWidth(titleText))/2, tbgPad-titleSize/72, titleText);
+    doc.setFontSize(fontSize);
+    doc.setLineWidth(lnWidth);
+    for (var c=0; c<=nbHours; c++) {
+      var x = c*tWidth/nbHours + lrgPad;
+      doc.line(x, tbgPad, x, height-tbgPad);
+      var hour = (c+8)%24;
+      var strHour = (hour==0)?langTxt[lang].mn:(hour==12)?langTxt[lang].md:String(hour%12)+(hour<12?'am':'pm');
+      doc.text(x - doc.getTextWidth(strHour)/2, height - (tbPad+tbgPad)/2, strHour);
+    }
+    var tHeight = height - 2.0*tbgPad;
+    doc.line( lrgPad, tbgPad, width-lrgPad, tbgPad);
+    var janDate   = Date.UTC(annee, 0, 1, 0, 0, 0, 0);
+    var nbMsDay   = 1000*60*60*24;
+    var nbDayYear = (Date.UTC(annee+1, 0, 1, 0, 0, 0, 0)-janDate)/nbMsDay;
+    for (var l=1; l<=nbMonth; l++) {
+      var monthDate = Date.UTC(annee, l, 1, 0, 0, 0, 0);
+      var nbDay = (monthDate - janDate)/nbMsDay;
+      var y = nbDay*tHeight/nbDayYear + tbgPad;
+      doc.line(lrgPad, y, width-lrgPad, y);
+      doc.text(lrPad, tbgPad+(l-0.4)*tHeight/nbMonth, langTxt[lang].mt[l-1]);
+    }
+    var oDate  = new Date(janDate);
+    var dimanche = 1+(7-oDate.getUTCDay())%7;  // Premier dimanche de l'année
+    var preDim = Date.UTC(annee, 0, dimanche, 0, 0, 0, 0);
+    var dashWidth = 0.1;
+    var rPad      = 0.03;
+    doc.setFont(fontNumber);
+    var y;
+    for (var nbWeek=0; nbWeek<52; nbWeek++) {
+      var nbDay = dimanche+7*nbWeek;
+      var oDim  = new Date(preDim+nbWeek*7*1000*60*60*24);
+      var dm    = oDim.getUTCDate();
+      y = (nbDay-1)*tHeight/nbDayYear + tbgPad;
+      doc.line(lrgPad, y, lrgPad+dashWidth, y);
+      doc.text(lrgPad-2*dashWidth, y, leftPad(dm,2,' '));
+      y = nbDay*tHeight/nbDayYear + tbgPad;
+      doc.line(width-lrgPad, y, width-lrgPad-dashWidth, y);
+      doc.text(width+rPad-lrgPad, y, dm.toString());
+    }
+    doc.setFont(fontStyle);
+  }
+  // When you cross 8am (right side of the page), wrap it to the left of the page
+  function wrapHour(arr) {
+    var aWrap = [];
+    for (var i=0; i<arr.length-1; i++) {
+      if ((Math.abs(arr[i][0]-arr[i+1][0])<4) &&
+          ((arr[i][0]<8 && 8<arr[i+1][0]) || (arr[i+1][0]<8 && 8<arr[i][0]))) {
+        var h = (arr[i+1][1]-arr[i][1])*(8-arr[i][0])/(arr[i+1][0]-arr[i][0]) + arr[i][1];
+        aWrap.push(arr[i]);
+        var e = arr[i][0]<arr[i+1][0]?7.999:8;
+        aWrap.push([e,h]);
+        aWrap.push([]);
+        var e = arr[i][0]<arr[i+1][0]?8:7.999;
+        aWrap.push([e,h]);
+      } else {
+        aWrap.push(arr[i]);
+      }
+    }
+    aWrap.push(arr[arr.length-1]);
+    return aWrap;
+  }
+  // Move 8 hour and rescale for DPI
+  function hourToDPI(arr, xStart, xRatio, yStart, yRatio) {
+    for (var i=0; i<arr.length; i++) {
+      if (arr[i].length==2) {
+        // Better to create a new object here
+        arr[i] = [xStart + xRatio*((arr[i][0] -8+24)%24),
+                  yStart + yRatio*arr[i][1]];
+      }
+    }
+    return arr;
+  }
+  function xyToDPI(xy, xs, xr, ys, yr) {
+    var nxy = [];
+    for (var i=0; i<xy.length; i++) {
+      nxy.push([xs+xr*xy[i][0], ys+yr*xy[i][1]]);
+    }
+    return nxy
+  }
+  // Draw lines with special dash and pen up ([])
+  function drawArrDPI(doc, arr) {
+    var x1 = arr[0][0];
+    var y1 = arr[0][1];
+    var pts = [];
+    for (var i=1; i<arr.length; i++) {
+      if (arr[i].length) {
+        if (arr[i-1].length) {
+          pts.push([arr[i][0]-arr[i-1][0], arr[i][1]-arr[i-1][1]]);
+        } else {
+          x1 = arr[i][0];
+          y1 = arr[i][1];
+        }
+      } else {
+        doc.lines(pts, x1, y1);
+        pts = []
+      }
+    }
+    if (pts.length!=0) {
+      doc.lines(pts, x1, y1);
+    }
+  }
+  // Draw set and rise dash
+  function drawDash(doc, arr, dash) {
+    for (i=1; i<arr.length-1; i++) {
+      if (arr[i].length!=0 && arr[i+1].length!=0) {
+        if (dash[0]) {
+          doc.line(arr[i][0]-dashLen, arr[i][1], arr[i][0], arr[i][1]);
+        }
+        if (dash[1]) {
+          doc.line(arr[i][0], arr[i][1], arr[i][0]+dashLen, arr[i][1]);
+        }
+      }
+    }
+  }
+  // Write planet's name
+  function drawName(doc, arr, dash, ind) {
+    for (i=1; i<arr.length-1; i++) {
+      if (arr[i].length!=0 && arr[i+1].length!=0) {
+        if (dash[0] && 0==(i+ind)%plaIndex) {
+          doc.text(arr[i][0], arr[i][1], langTxt[lang].pn[ind])
+        }
+        if (dash[1] && 0==(i+ind)%plaIndex) {
+          doc.text(arr[i][0], arr[i][1], langTxt[lang].pn[ind])
+        }
+      }
+    }
+  }
+  // Draw set or rise lines with wrap, dash and name
+  function drawArr(doc, arr, dash, ind) {
+    var aWrap = wrapHour(arr);  // pour plus de 60' de latitude
+    var aDPI  = hourToDPI(aWrap, lrgPad, tWidth/nbHours, tbgPad, tHeight/nbWeek);
+    drawArrDPI(doc, aDPI);
+    drawDash(doc, aDPI, dash);
+    if (ind) {
+      drawName(doc, aDPI, dash, ind);
+    }
+  }
+  function drawLevCou(doc, lever, coucher) {
+  // Pour le soleil uniquement
+  // Vérifie pour les jours sans lever ni coucher
+    var loopStart = 0;
+    var loopEnd   = 0;
+    for (var i=0; i<lever.length; i++) {
+      loopStart = loopStart || (lever[i][0]?0:i);
+      loopEnd   = loopEnd   || ((loopStart && lever[i][0])?i:0);
+    }
+    if (loopStart !=0 && loopEnd !=0) {
+      lever.splice(loopStart, loopEnd-loopStart, coucher[loopStart-1], []);
+      coucher.splice(loopStart, loopEnd-loopStart, [], lever[loopStart+2] );
+    }
+    drawArr(doc, lever, dashLev, objSoleil.ind);
+    drawArr(doc, coucher, dashCou, objSoleil.ind);
+  }
+  function drawLevCouSoleil(doc, annee, objSoleil, obsLat, obsLon, obsFus) {
+    var levCA   = [];
+    var couCA   = [];
+    var levCN   = [];
+    var couCN   = [];
+    var levCC   = [];
+    var couCC   = [];
+    var transit = [];
+    var lever, coucher;
+
+    objSoleil.asj = [];  // SJ1900
+    objSoleil.nbd = [];  // nb days from jan 1
+    objSoleil.aet = [];
+    objSoleil.axh = [];
+    objSoleil.ayh = [];
+    objSoleil.alo = [];
+    
+    //console.log(sj1900(Date.UTC(annee, 0, 1, 0, 0, 0, 0)));
+    //console.log(siecleJulian(new Date(annee, 0, 1, 0, 0, 0, 0)));
+    //error();
+    var firstDate = Date.UTC(annee, 0, 1, 0, 0, 0, 0);
+    var lastDate  = Date.UTC(annee+1, 0, 1, 0, 0, 0, 0)
+    var sj19      = sj1900(firstDate);
+    objSoleil.asj.push(sj19);
+    objSoleil.nbd.push(0);
+    var oDate    = new Date(firstDate);
+    var oneSun   = 7-oDate.getUTCDay();  // nb Day to next Sunday
+    var nextSun  = 7;
+    var nextSJ   = 7/36525;
+    var oneSJ    = sj19 + oneSun*nextSJ/7;
+    var oneDayMs = 24*60*60*1000;
+    var nbDay  = (lastDate - firstDate)/oneDayMs;
+    while (oneSun<nbDay) {
+      objSoleil.asj.push(oneSJ);
+      objSoleil.nbd.push(oneSun);
+      oneSJ  += nextSJ;
+      oneSun += nextSun;
+    }
+    objSoleil.asj.push(sj1900(lastDate));
+    objSoleil.nbd.push(nbDay);
+    for (var i=0; i<objSoleil.asj.length; i++) {
+      objSoleil.reCalc(objSoleil.asj[i]);
+      computeRV(objSoleil);
+      computeLB(objSoleil);
+      objSoleil.axh[i] = objSoleil.xh;
+      objSoleil.ayh[i] = objSoleil.yh;
+      objSoleil.alo[i] = objSoleil.loh;
+      computeAscDecSoleil(objSoleil);
+      equationDuTemps(objSoleil);
+      objSoleil.aet[i] = objSoleil.et;
+      computeSetRise(objSoleil, objSoleil.et, objSoleil.loh, obsLat, obsLon, obsFus);
+      transit[i] = [objSoleil.transit  , objSoleil.nbd[i]/7];
+      levCA[i]   = [objSoleil.leverCA  , objSoleil.nbd[i]/7];
+      couCA[i]   = [objSoleil.coucherCA, objSoleil.nbd[i]/7];
+      levCN[i]   = [objSoleil.leverCN  , objSoleil.nbd[i]/7];
+      couCN[i]   = [objSoleil.coucherCN, objSoleil.nbd[i]/7];
+      levCC[i]   = [objSoleil.leverCC  , objSoleil.nbd[i]/7];
+      couCC[i]   = [objSoleil.coucherCC, objSoleil.nbd[i]/7];
+    }
+    doc.setLineDash(objSoleil.dash, 0);
+    drawArr(doc, transit, dashTra, objSoleil.ind); // Passage au méridien
+    drawLevCou(doc, levCA, couCA);  // Lever Coucher Astronomique
+    drawLevCou(doc, levCN, couCN);  // Lever Coucher Nautique
+    drawLevCou(doc, levCC, couCC);  // Lever Coucher Civil
+    doc.setLineDash([], 0);
+  }
+  function drawLevCouPla(doc, annee, objSoleil, objPla, obsLat, obsLon, obsFus) {
+    var lever   = [];
+    var transit = [];
+    var coucher = [];
+    objPla.axh  = [];
+    objPla.ayh  = [];
+    for (var i=0; i<objSoleil.asj.length; i++) {
+      objPla.reCalc(objSoleil.asj[i]);
+      computeRV(objPla);
+      computeLB(objPla);
+      objPla.axh[i] = objPla.xh;
+      objPla.ayh[i] = objPla.yh;      
+      computeAscDec(objPla, objSoleil.axh[i],  objSoleil.ayh[i], objSoleil.obm);
+      computeSetRise(objPla, objSoleil.aet[i], objSoleil.alo[i], obsLat, obsLon, obsFus);
+      lever[i]   = [objPla.lever  , objSoleil.nbd[i]/7];
+      transit[i] = [objPla.transit, objSoleil.nbd[i]/7];
+      coucher[i] = [objPla.coucher, objSoleil.nbd[i]/7];
+    }
+    doc.setLineDash(objPla.dash, 0);
+    drawArr(doc, lever,   dashLev, objPla.ind);
+    drawArr(doc, transit, dashTra, objPla.ind);
+    drawArr(doc, coucher, dashCou, objPla.ind);
+    doc.setLineDash([], 0);
+  }
+
+  function julianDate(date) {
+    return (date.getTime() / 86400000) - (date.getTimezoneOffset()/1440) + 2440587.5;
+  }
+  function jdUTC(date) {
+    return date/86400000 + 2440587.5;
+  }
+  function siecleJulian(date) {
+    return (julianDate(date)-JJ1900)/36525.0;
+  }
+  function sj1900(date) {
+    return (jdUTC(date)-JJ1900)/36525.0;
+  }
+  function leftPad(num, nbCar, carPad) {
+    var str = carPad+carPad+carPad+num.toString();
+    return str.substr(str.length-nbCar);
+  }
+  function xms (deg, unite) {
+    var adeg = Math.abs(deg);
+    var ideg = Math.floor(adeg);
+    var imin = Math.floor((adeg-ideg)*60);
+    var isec = Math.floor(((adeg-ideg)*60-imin)*60);
+    var pad  = (unite=='h')?3:4;
+    return leftPad(Math.sign(deg)*ideg, pad, ' ') + unite + leftPad(imin, 2, '0') + "'" + leftPad(isec, 2, '0') +'"';
+  }
+  function dms(deg) {
+    return xms(deg, '°');
+  }
+  function hms(hrs) {
+    return xms(hrs, 'h');
+  }
+  function showCoor(entete, objPla) {
+    msg.innerHTML += entete+nl;
+    msg.innerHTML += sp+'Longitude moyenne        ' + RadToDeg*objPla.lm + '    ' + dms(RadToDeg*objPla.lm) + nl;
+    msg.innerHTML += sp+'Anomalie  moyenne        ' + RadToDeg*objPla.am + '    ' + dms(RadToDeg*objPla.am) + nl;
+    msg.innerHTML += sp+'Excentricite             ' + objPla.ex + nl;
+    msg.innerHTML += sp+'Equation du temps        ' + RadToHrs*objPla.et + '    ' + hms(RadToHrs*objPla.et) + nl;
+    msg.innerHTML += sp+'Anomalie Excentrique     ' + RadToDeg*objPla.ae + '    ' + dms(RadToDeg*objPla.ae) + nl;
+    msg.innerHTML += sp+'Anomalie Vrai            ' + RadToDeg*objPla.av + '    ' + dms(RadToDeg*objPla.av) + nl;
+    msg.innerHTML += sp+'Longitude Vrai           ' + RadToDeg*objPla.lv + '    ' + dms(RadToDeg*objPla.lv) + nl;
+    //msg.innerHTML += sp+'Longitude Apparente  ' + RadToDeg*la + dms(RadToDeg*la);
+    msg.innerHTML += sp+'Longitude Heliocentrique ' + RadToDeg*objPla.loh + '    ' + dms(RadToDeg*objPla.loh) + nl;
+    msg.innerHTML += sp+'Latitude  Heliocentrique ' + RadToDeg*objPla.lah + '    ' + dms(RadToDeg*objPla.lah) + nl;
+    msg.innerHTML += sp+'Longitude Geocentrique   ' + RadToDeg*objPla.log + '    ' + dms(RadToDeg*objPla.log) + nl;
+    msg.innerHTML += sp+'Latitude  Geocentrique   ' + RadToDeg*objPla.lag + '    ' + dms(RadToDeg*objPla.lag) + nl;
+    msg.innerHTML += sp+'Distance du Soleil       ' + objPla.ds + nl;
+    msg.innerHTML += sp+"Obliquite de l'eclip     " + RadToDeg*objPla.obm + '    ' + dms(RadToDeg*objPla.obm) + nl;
+    msg.innerHTML += sp+'Ascension Droite         ' + RadToDeg*objPla.asc + '    ' + hms(RadToHrs*objPla.asc) + nl;
+    msg.innerHTML += sp+'Declinaison              ' + RadToDeg*objPla.dec + '    ' + dms(RadToDeg*objPla.dec) + nl;
+    msg.innerHTML += sp+'Levé du soleil           ' +         objPla.leve + '    ' + hms(objPla.leve) + nl;
+    msg.innerHTML += sp+'Transit du soleil        ' +      objPla.transit + '    ' + hms(objPla.transit) + nl;
+    msg.innerHTML += sp+'Coucher                  ' +      objPla.coucher + '    ' + hms(objPla.coucher) + nl;
+    msg.innerHTML += sp+'Ascension Droite J2000   ' + RadToDeg*objPla.j2000Asc + '    ' + hms(RadToHrs*objPla.j2000Asc) + nl;
+    msg.innerHTML += sp+'Declinaison      J2000   ' + RadToDeg*objPla.j2000Dec + '    ' + dms(RadToDeg*objPla.j2000Dec) + nl;
+  }
+  function showLevCou(lever, coucher) {
+    var last = Math.max(lever.length, coucher.length);
+    var strLev, strCou;
+    msg.innerHTML += 'Start here: '+lever.length+'  '+coucher.length+'  '+last+nl;
+    for (var i=0; i<last; i++) {
+      strLev = (i<lever.length)?hms(lever[i][0])+' '+lever[i][1]:'         ';
+      strCou = (i<coucher.length)?hms(coucher[i][0])+' '+coucher[i][1]:'';
+      msg.innerHTML += strLev+'  '+strCou+nl;
+    }
+  }
+  // First page Annual graphique
+  function anGra(doc, annee, ville, obsLat, obsLon, obsFus) {
+    var date  = new Date(Date.UTC(annee, 0, 7*nbWeek/2, 0, 0, 0, 0));
+    var sj = siecleJulian(date);
+    objSoleil  = new Soleil(sj);
+    objMercure = new Mercure(sj);
+    objVenus   = new Venus(sj);
+    objMars    = new Mars(sj);
+    objJupiter = new Jupiter(sj);
+    objSaturne = new Saturne(sj);
+    objPla     = [objSoleil, objMercure, objVenus, objMars, objJupiter, objSaturne];
+    doc.setFontSize(plaFSize);
+    drawLevCouSoleil (doc, annee, objSoleil, obsLat, obsLon, obsFus);
+    for (var i=1; i<objPla.length; i++) {
+      drawLevCouPla(doc, annee, objSoleil, objPla[i], obsLat, obsLon, obsFus);
+    }
+    doc.setFontSize(fontSize);
+    drawGrid(doc, annee, ville);
+  }
+  function xyPla(objPla, sji) {
+    objPla.reCalc(sji);
+    computeRV(objPla);
+    computeLB(objPla);
+    objPla.xy.push([objPla.xh, objPla.yh]);
+  }
+  function drawPlaCircle(doc, annee) {
+    var date  = Date.UTC(annee, 0, 1, 0, 0, 0, 0);
+    var sj    = sj1900(date);
+    var nbPts = 100;
+    for (var i=0; i<objPla.length; i++) {
+      objPla[i].xy  = [];
+    }
+    for (var i=0; i<nbPts; i++) {
+      for (var j=0; j<objPla.length; j++) {
+        xyPla(objPla[j],  sj + i*objPla[j].yea/nbPts);
+      }
+    }
+    for (var i=0; i<objPla.length; i++) {
+      objPla[i].xy.push(objPla[i].xy[0]);
+    }
+    doc.setLineDash([], 0);
+    doc.setLineWidth(lnWidth);
+    var ratio = tHeight/4;
+    var cx    = width/4;
+    var cy    = height/2;
+    drawArrDPI(doc, xyToDPI(objSoleil.xy,  cx, -ratio, cy, ratio));  // Earth is at the other side
+    drawArrDPI(doc, xyToDPI(objMercure.xy, cx, ratio, cy, -ratio));
+    drawArrDPI(doc, xyToDPI(objVenus.xy,   cx, ratio, cy, -ratio));
+    doc.circle(cx, cy, objSoleil.ray*ratio);
+    cx    = 3*cx;
+    ratio = tHeight/4/objSaturne.dga;
+    drawArrDPI(doc, xyToDPI(objSoleil.xy,  cx, -ratio, cy, ratio));
+    drawArrDPI(doc, xyToDPI(objMars.xy,    cx, ratio, cy, -ratio));
+    drawArrDPI(doc, xyToDPI(objJupiter.xy, cx, ratio, cy, -ratio));
+    drawArrDPI(doc, xyToDPI(objSaturne.xy, cx, ratio, cy, -ratio));
+    doc.circle(cx, cy, objSoleil.ray*ratio);   // Soleil
+  }
+  function writePlaMonth(doc, annee) {
+    for (var i=0; i<objPla.length; i++) {
+      objPla[i].xy  = [];
+    }
+    for (var i=0; i<nbMonth; i++) {
+      var date  = Date.UTC(annee, i, 1, 0, 0, 0, 0);
+      var sj    = sj1900(date);
+      for (var j=0; j<objPla.length; j++) {
+        xyPla(objPla[j],  sj);
+      }
+    }
+    doc.setFontSize(plaFSize);
+    var rat1 = tHeight/4;
+    var rat2 = rat1/objSaturne.dga;
+    var cx1   = width/4;
+    var cx2   = 3*cx1;
+    var cy    = height/2;
+    var lh = doc.getLineHeightFactor()/72;
+    var ratS1 = rat1 + 2*lh/objSoleil.dga;
+    var ratMe = rat1 + 2*lh/objMercure.dga;
+    var ratVe = rat1 + 2*lh/objVenus.dga;
+    var ratS2 = rat2 + 2*lh/objSoleil.dga;
+    var ratMa = rat2 + 2*lh/objMars.dga;
+    var ratJu = rat2 + 2*lh/objJupiter.dga;
+    var ratSa = rat2 + 2*lh/objSaturne.dga;
+    var xyS1 = xyToDPI(objSoleil.xy,  cx1, -ratS1, cy+lh, ratS1);
+    var xyMe = xyToDPI(objMercure.xy, cx1, ratMe,  cy+lh, -ratMe);
+    var xyVe = xyToDPI(objVenus.xy,   cx1, ratVe,  cy+lh, -ratVe);
+    var xyS2 = xyToDPI(objSoleil.xy,  cx2, -ratS2, cy+lh, ratS2);
+    var xyMa = xyToDPI(objMars.xy,    cx2, ratMa,  cy+lh, -ratMa);
+    var xyJu = xyToDPI(objJupiter.xy, cx2, ratJu,  cy+lh, -ratJu);
+    var xySa = xyToDPI(objSaturne.xy, cx2, ratSa,  cy+lh, -ratSa);
+    for (var i=0; i<nbMonth; i++) {
+      doc.text(xyS1[i][0], xyS1[i][1], (i+1).toFixed(0), 'center');
+      doc.text(xyMe[i][0], xyMe[i][1], (i+1).toFixed(0), 'center');
+      doc.text(xyVe[i][0], xyVe[i][1], (i+1).toFixed(0), 'center');
+      doc.text(xyS2[i][0], xyS2[i][1], (i+1).toFixed(0), 'center');
+      doc.text(xyMa[i][0], xyMa[i][1], (i+1).toFixed(0), 'center');
+      doc.text(xyJu[i][0], xyJu[i][1], (i+1).toFixed(0), 'center');
+      doc.text(xySa[i][0], xySa[i][1], (i+1).toFixed(0), 'center');
+    }
+  }
+  function orGra(doc, annee) {
+    drawPlaCircle(doc, annee);
+    writePlaMonth(doc, annee);
+    //
+  }
+  // Button Create a PDF File here
+  function create() {
+    var annee  = Number(inAnVa.value);
+    if (1900<=annee && annee<=2100) {
+      var ville  = inViSel.options[inViSel.selectedIndex].value;
+      var obsLat = DegToRad*Number(inLaVa.value);
+      var obsLon = DegToRad*Number(inLoVa.value);
+      var obsFus = Number(inFhVa.value);
+      var firstDate = Date.UTC(annee  , 0, 1, 0, 0, 0, 0);
+      var lastDate  = Date.UTC(annee+1, 0, 1, 0, 0, 0, 0)
+      var oneDayMs  = 24*60*60*1000;
+        nbDayYear = (lastDate - firstDate)/oneDayMs;
+        nbWeek    = nbDayYear/7;
+      var doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'in',
+        format: 'letter'
+      });
+      doc.setFont(fontStyle);
+      doc.setLineWidth(lnWidth);
+      anGra(doc, annee, ville, obsLat, obsLon, obsFus);
+      doc.addPage();
+      orGra(doc, annee);
+      doc.save('Ephereride.pdf');
+    } else {
+      msg.innerHTML = langTxt[lang].ma;
+    }
+  }
+  function viChanged(obj) {
+    var ville = obj.options[obj.selectedIndex].value;
+    if (ville in villes) {
+      inLoVa.value  = villes[ville].lo;
+      inLaVa.value  = villes[ville].la;
+      inFhVa.value  = villes[ville].fh;
+    }
+  }
+  function init() {
+    lang = navigator.language;
+    if (!(lang in langTxt)) 
+      lang = Object.keys(langTxt)[0];
+    title.innerHTML = langTxt[lang].wt;
+    inAn.innerHTML  = langTxt[lang].y;
+    bcre.innerHTML  = langTxt[lang].c;
+    inAnVa.value = new Date().getFullYear();
+    inVi.innerHTML  = langTxt[lang].v;
+    var option;
+    for (k in villes) {
+      option = document.createElement('option');
+      option.text = k;
+      inViSel.add(option);
+    }
+    var ville = inViSel.options[0].value;
+    inLo.innerHTML  = langTxt[lang].lo;
+    inLa.innerHTML  = langTxt[lang].la;
+    inFh.innerHTML  = langTxt[lang].fh;
+    inLoVa.value  = villes[ville].lo;
+    inLaVa.value  = villes[ville].la;
+    inFhVa.value  = villes[ville].fh;
+  }
+  </script>
+</body >
+</html>
