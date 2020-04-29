@@ -17,4 +17,8 @@
  <p>Infection: <p>
  - https://staubinr.github.io/Infection/Infection.html
  </li>
+ <li>
+ <p>Ephemeris: <p>
+ - https://staubinr.github.io/Ephemeris/Ephemeris.html
+ </li>
 </ul>
