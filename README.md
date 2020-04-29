@@ -19,6 +19,6 @@
  </li>
  <li>
  <p>Ephemeris: <p>
- - https://staubinr.github.io/Ephemeris/Ephemeris.html
+ - https://staubinr.github.io/Ephemeris/EphemerisPDF.html
  </li>
 </ul>
