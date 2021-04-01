@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html>
+ <head>
+  <meta charset="utf-8">
+  <title>Wolf</title>
+  <style>
+   body { 
+    margin: 0px;
+    overflow: hidden;
+   }
+  </style>
+ </head>
+ <body style="background-color: #004040">
+  <canvas id="canv3d" width="320px" height="200px" style="width:640px;height:400px;"></canvas>
+  <canvas id="canv2d" width="640px" height="35px"  style="width:640px;height:85px;"></canvas>
+  <div id="errMsg"></div>
+  <script id="lvl0" type="text/javascript" src="Mat4Class.js"></script>
+  <script id="vertex-shader-3d" type="glsl">
+   attribute     vec4 a_Position;
+   attribute     vec2 a_TexCoor;
+   uniform       mat4 u_ModelView;
+   uniform       mat4 u_Projection;
+   varying highp vec2 v_TexCoor;
+   void main() {
+    gl_Position = u_Projection * u_ModelView * a_Position;
+    v_TexCoor   = a_TexCoor;
+   }
+  </script>
+  <script id="fragment-shader-3d" type="glsl">
+   precision mediump float;
+   varying highp vec2 v_TexCoor;
+   uniform sampler2D  u_Texture;
+   void main() {
+     vec4 texel = texture2D(u_Texture, v_TexCoor);
+     if (texel.a < 0.5) {
+       discard;
+     }
+     gl_FragColor = texel;
+   }
+  </script>
+  <script>
+  "use strict";
+  function crHTML() {
+    const keyFn = {
+      ArrowUp:    false,
+      ArrowDown:  false,
+      ArrowRight: false,
+      ArrowLeft:  false,
+      PageUp:     false,
+      PageDown:   false,
+      Space:      false,
+      KeyC:       false,
+      KeyF:       false,
+      KeyB:       false,
+      KeyS:       false,
+      KeyD:       false,
+      KeyX:       false,
+      ShiftLeft:   false,
+      ShiftRight:  false
+    }
+    function readShader() {
+      const vertex   = document.getElementById("vertex-shader-3d").text;
+      const fragment = document.getElementById("fragment-shader-3d").text;
+      return {vertex, fragment};
+    }
+    function error(msg) {
+      document.getElementById("errMsg").innerHTML += "<br>"+msg;
+    }
+    function keyDown(e) {
+      keyFn[e.code] = true;
+    }
+    function keyUp(e) {
+      keyFn[e.code] = false;
+    }
+    document.addEventListener("keydown", keyDown);
+    document.addEventListener("keyup",   keyUp);
+    return {keyFn,
+            readShader, error, keyDown};
+  };
+
+  function crCan() {
+    const cid     = "canv3d";
+    const canvas  = document.getElementById(cid);
+    const gl      = canvas.getContext("webgl");
+    const fps     = 30; // 20 frame per sec is ok;
+    const msFrame = 1000/fps; // One frame every ms.
+    var now       = 0;
+    var oldNow    = 0;
+
+    const shaderSource = HTML.readShader();
+
+    const vertexShader   = createShader(gl.VERTEX_SHADER,   shaderSource.vertex);
+    const fragmentShader = createShader(gl.FRAGMENT_SHADER, shaderSource.fragment);
+    const shaderProgram  = createProgram(vertexShader, fragmentShader);
+    gl.useProgram(shaderProgram);
+
+    const wall = {};
+    wall.positionBuff = gl.createBuffer();
+    wall.indexBuff    = gl.createBuffer();
+    wall.texCoorBuff  = gl.createBuffer();
+
+    const door = {};
+    door.positionBuff = gl.createBuffer();
+    door.indexBuff    = gl.createBuffer();
+    door.texCoorBuff  = gl.createBuffer();
+
+    const sprite = {};
+    sprite.positionBuff = gl.createBuffer();
+    sprite.indexBuff    = gl.createBuffer();
+    sprite.texCoorBuff  = gl.createBuffer();
+
+    const guard = {};
+    guard.positionBuff = gl.createBuffer();
+    guard.indexBuff    = gl.createBuffer();
+    guard.texCoorBuff  = gl.createBuffer();
+
+    const vertexAttrLoc    = gl.getAttribLocation(shaderProgram,  "a_Position");
+    const texCoorAttrLoc   = gl.getAttribLocation(shaderProgram,  "a_TexCoor");
+    const projectionUniLoc = gl.getUniformLocation(shaderProgram, "u_Projection");
+    const modelViewUniLoc  = gl.getUniformLocation(shaderProgram, "u_ModelView");
+    const textureUniLoc    = gl.getUniformLocation(shaderProgram, "u_Texture");
+
+    const old = {x:0, y:0};
+    const dep = {x:6.01, y:10.01, z:0.51, a:0.01*Math.PI/180};
+
+    const texWall   = {fn:"walls.png",   buff:null, ready:false};
+    const texSprite = {fn:"sprites.png", buff:null, ready:false};
+    const texGuard  = {fn:"AllGuard.png", buff:null, ready:false};
+
+    const fl = {showBoundary: true, animate: true, reDraw: true};
+
+    function createShader(type, source) {
+      var shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+      if (success) {
+        return shader;
+      }
+      console.log(gl.getShaderInfoLog(shader));
+      gl.deleteShader(shader);
+    }
+    function createProgram(vertexShader, fragmentShader) {
+      var program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      var success = gl.getProgramParameter(program, gl.LINK_STATUS);
+      if (success) {
+        return program;
+      }
+      console.log(gl.getProgramInfoLog(program));
+      gl.deleteProgram(program);
+    }
+    function isPowerOf2(value) {
+      return (value & (value - 1)) === 0;
+    }
+    function texPrm(texObj, width, height) {
+      // WebGL1 has different requirements for power of 2 images
+      // vs non power of 2 images so check if the image is a
+      // power of 2 in both dimensions.
+      if (texObj) {
+        texObj.width  = width/64;
+        texObj.height = height/64;
+      }
+      if (false && isPowerOf2(width) && isPowerOf2(height)) {
+        // Yes, it's a power of 2. Generate mips.
+        gl.generateMipmap(gl.TEXTURE_2D);
+        console.log("MipMap");
+      } else {
+        // No, it's not a power of 2. Turn off mips and set
+        // wrapping to clamp to edge
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      }
+    }
+    // Load texture
+    function loadTexture(texObj, mazeObj1, mazeObj2) {
+      texObj.ready = false;
+      // Initialize a texture and load an image.
+      // When the image finished loading copy it into the texture.
+      texObj.buff = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texObj.buff);
+      // Because images have to be downloaded over the internet
+      // they might take a moment until they are ready.
+      // Until then put a single pixel in the texture so we can
+      // use it immediately. When the image has finished downloading
+      // we'll update the texture with the contents of the image.
+      const level = 0;
+      const internalFormat = gl.RGBA;
+      const width  = 1;
+      const height = 1;
+      const border = 0;
+      const srcFormat = gl.RGBA;
+      const srcType   = gl.UNSIGNED_BYTE;
+      const pixel     = new Uint8Array([0, 0, 255, 255]);  // opaque blue
+      gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                width, height, border, srcFormat, srcType, pixel);
+      const image  =  new Image();
+      image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texObj.buff);
+        //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,1);
+        gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+               srcFormat, srcType, image);
+        // WebGL1 has different requirements for power of 2 images
+        // vs non power of 2 images so check if the image is a
+        // power of 2 in both dimensions.
+        texPrm(mazeObj1, image.width, image.height);
+        texPrm(mazeObj2, image.width, image.height);
+        texObj.ready = true;
+      };
+      image.src = texObj.fn;
+    }
+    function loadAllTextures() {
+      loadTexture(texWall,   maze.wall, maze.door);
+      loadTexture(texSprite, maze.sprite);
+      loadTexture(texGuard,  maze.guard);
+    }
+    function limit(gl) {
+      const mLen = 35;
+      //var prms = [
+      //["MAX_CUBE_MAP_TEXTURE_SIZE", 4096],
+      //["MAX_RENDERBUFFER_SIZE", 4096],
+      //["MAX_TEXTURE_SIZE", 4096],
+      //["MAX_VIEWPORT_DIMS", [4096,4096]],
+      //["MAX_VERTEX_TEXTURE_IMAGE_UNITS", 4],
+      //["MAX_TEXTURE_IMAGE_UNITS", 8],
+      //["MAX_COMBINED_TEXTURE_IMAGE_UNITS", 8],
+      //["MAX_VERTEX_ATTRIBS", 16],
+      //["MAX_VARYING_VECTORS", 8],
+      //["MAX_VERTEX_UNIFORM_VECTORS", 128],
+      //["MAX_FRAGMENT_UNIFORM_VECTORS", 64],
+      //["ALIASED_POINT_SIZE_RANGE", [1,100]]
+      //];
+      var prms = [
+      ["RENDERER", "WebGL", "what's doing the WebGL rendering"],
+      ["MAX_VERTEX_ATTRIBS", 16, "limit on number of attributes"],
+      ["MAX_VERTEX_UNIFORM_VECTORS", 128, "limit on number of uniforms in vertex shader"],
+      ["MAX_FRAGMENT_UNIFORM_VECTORS", 64, "limit on number of uniforms in fragment shader"],
+      ["MAX_VARYING_VECTORS", 8, "limit on number of varying variables"],
+      ["MAX_VIEWPORT_DIMS", [4096,4096], "maximum width and height of the viewport"],
+      ["ALIASED_POINT_SIZE_RANGE", [1,100], "range of supported values for gl_PointSize"],
+      ["ALIASED_LINE_WIDTH_RANGE", 0, "range of supported values for line width"],
+      ["MAX_TEXTURE_SIZE", 4096, "maximum width and height of texture images"],
+      ["MAX_CUBE_MAP_TEXTURE_SIZE", 4096, "maximum width and height of images in cube map textures"],
+      ["MAX_TEXTURE_IMAGE_UNITS", 8, "limit on number of texture units accessed from fragment shader"],
+      ["MAX_VERTEX_TEXTURE_IMAGE_UNITS", 4, "limit on number of texture units accessed from vertex shader"],
+      ["MAX_COMBINED_TEXTURE_IMAGE_UNITS", 8, "limit on total number of texture units accessed from both shaders"],
+      ["MAX_RENDERBUFFER_SIZE", 4096, "maximum width and height for auxiliary drawing buffers"]
+      ];
+      var val = [];
+      for (const k of prms) {
+        const sSta = (Array.isArray(k[1])?("["+k[1].join(",")+"]"):k[1].toString());
+        const pLen = mLen-sSta.length;
+        const vPrm = gl.getParameter(gl[k[0]]);
+        const sPrm = ((typeof vPrm === "object")?("["+vPrm.join(",")+"]"):vPrm.toString());
+        val.push(k[0].padEnd(pLen)+sSta+": "+sPrm.padEnd(15)+k[2]);
+      }
+      return val.join("\n");
+    }
+    function initBuffer(posObj, buffObj) {
+      // Create BuffObj with PosObj
+      buffObj.vertexCount = posObj.index.length;
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffObj.positionBuff);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        new Float32Array(posObj.position), gl.STATIC_DRAW);
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffObj.indexBuff);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,
+        new Uint16Array(posObj.index), gl.STATIC_DRAW);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffObj.texCoorBuff);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        new Float32Array(posObj.texCoor), gl.STATIC_DRAW);
+
+      gl.enableVertexAttribArray(vertexAttrLoc);
+      gl.enableVertexAttribArray(texCoorAttrLoc);
+    }
+    function drawInit() {
+      // Thing that should never change
+      const fieldOfView = 45 * Math.PI / 180;   // in radians
+      const aspect = gl.canvas.clientWidth/gl.canvas.clientHeight;
+      const zNear  = 0.1;
+      const zFar   = 100.0;
+      var projectionMatrix = Mat4Class.create();
+      Mat4Class.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
+      gl.uniformMatrix4fv(projectionUniLoc, false, projectionMatrix);
+    }
+    function drawScene() {
+      // Thing that should change for every display
+      // gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);  // Clear to black, fully opaque
+      gl.clearDepth(1.0);                 // Clear everything
+      gl.enable(gl.DEPTH_TEST);           // Texture use 0 or 1 alpha (transparency)
+      gl.depthFunc(gl.LEQUAL);            // Near things obscure far things
+      // Many tries to find a way to remove fantom line on the ground and wall.
+      //gl.enable(gl.BLEND);
+      //gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA,
+      //        gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      //gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      //gl.blendEquation(gl.FUNC_ADD);
+      //gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      // Clear the canvas before we start drawing on it.
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      // Set the drawing position to the "identity" point, which is
+      // the center of the scene.
+      var modelViewMatrix = Mat4Class.create();
+      // Now move the drawing position a bit to where we want to
+      // start drawing the square.
+      Mat4Class.rotate(modelViewMatrix,  // destination matrix
+            modelViewMatrix,        // matrix to rotate
+            -Math.PI/2,              // amount to rotate in radians
+            [1, 0, 0]);             // axis to rotate around (X)
+      Mat4Class.rotate(modelViewMatrix,  // destination matrix
+            modelViewMatrix,        // matrix to rotate
+            Math.PI/2-dep.a,              // amount to rotate in radians
+            [0, 0, 1]);             // axis to rotate around (X)
+      Mat4Class.translate(modelViewMatrix,     // destination matrix
+            modelViewMatrix,           // matrix to translate
+           [-dep.x, -dep.y, -dep.z]);   // amount to translate
+      gl.uniformMatrix4fv(modelViewUniLoc, false, modelViewMatrix);
+      // Draw other object
+      drawObj(wall,   texWall);
+      drawObj(door,   texWall);
+      drawObj(sprite, texSprite);
+      drawObj(guard,  texGuard);
+    }
+    function drawObj(buffObj, texObj) {
+      // Position
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffObj.positionBuff);
+      gl.vertexAttribPointer(vertexAttrLoc, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(vertexAttrLoc);
+      // Index
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffObj.indexBuff);
+      // Texture Coordonate
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffObj.texCoorBuff);
+      gl.vertexAttribPointer(texCoorAttrLoc, 2, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(texCoorAttrLoc);
+      // Texture Color
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texObj.buff);
+      gl.uniform1i(textureUniLoc, 0);
+      //
+      const type = gl.UNSIGNED_SHORT;
+      const offset = 0;
+      gl.drawElements(gl.TRIANGLES, buffObj.vertexCount, type, offset);
+    }
+    function checkKeys() {
+      const step  = 0.1;
+      const trAng = 5*Math.PI/180;
+      var   curX  = dep.x;
+      var   curY  = dep.y;
+      if (HTML.keyFn.ArrowUp) {    // Move forward
+        curX += step*Math.cos(dep.a);
+        curY += step*Math.sin(dep.a);
+      }
+      if (HTML.keyFn.ArrowDown) {  // Move back
+        curX -= step*Math.cos(dep.a);
+        curY -= step*Math.sin(dep.a);
+      }
+      if (HTML.keyFn.ArrowRight) { // Turn or slide right
+        if (HTML.keyFn.ShiftLeft || HTML.keyFn.ShiftRght) {
+          curX += step*Math.cos(dep.a-90*Math.PI/180);
+          curY += step*Math.sin(dep.a-90*Math.PI/180);
+        } else {
+          dep.a -= trAng;
+          dep.a += (dep.a<0)?(2*Math.PI):0;
+        }
+      }
+      if (HTML.keyFn.ArrowLeft) {  // Turn or slide left
+        if (HTML.keyFn.ShiftLeft || HTML.keyFn.ShiftRght) {
+          curX += step*Math.cos(dep.a+90*Math.PI/180);
+          curY += step*Math.sin(dep.a+90*Math.PI/180);
+        } else {
+          dep.a += trAng;
+          dep.a -= (dep.a>=2*Math.PI)?(2*Math.PI):0;
+        }
+      }
+      if (HTML.keyFn.PageUp) {    // Move up
+        dep.z += step;
+      }
+      if (HTML.keyFn.PageDown) {  // Move down
+        dep.z -= step;
+      }
+      if (HTML.keyFn.Space) {     // Open a door
+        HTML.keyFn.Space = false;
+        maze.openDoor(curX, curY, dep.a);
+      }
+      if (HTML.keyFn.KeyC) {      // Hide or show ceiling
+        maze.fl.showCeil    = !maze.fl.showCeil;
+        HTML.keyFn.KeyC     = false;
+        maze.fl.rePaintWall = true;
+      }
+      if (HTML.keyFn.KeyF) {     // Hide or show floor
+        maze.fl.showFloor = !maze.fl.showFloor;
+        HTML.keyFn.KeyF     = false;
+        maze.fl.rePaintWall = true;
+      }
+      if (HTML.keyFn.KeyB) {     // Go throught or stop on walls
+        fl.showBoundary = !fl.showBoundary;
+        HTML.keyFn.KeyB = false;
+      }
+      if (HTML.keyFn.KeyS) {     // Stop animation like Guard or Door
+        fl.animate      = false;
+        HTML.keyFn.KeyS = false;
+        console.log("Animate is now: ", fl.animate);
+      }
+      if (HTML.keyFn.KeyD) {     // Enable animation
+        fl.animate      = true;
+        HTML.keyFn.KeyD = false;
+        console.log("Animate is now: ", fl.animate);
+      }
+      if (HTML.keyFn.KeyX) {    // Shoot a guard
+        maze.shootGuard();
+        HTML.keyFn.KeyX = false;
+      }
+      if (HTML.keyFn.ArrowUp    || HTML.keyFn.ArrowDown ||
+          HTML.keyFn.ArrowRight || HTML.keyFn.ArrowLeft ||
+          HTML.keyFn.PageUp     || HTML.keyFn.PageDown) {
+        if (fl.showBoundary) {
+          // Check the new position and slide on the wall
+          [dep.x, dep.y] = maze.checkBoundary(curX, curY, dep.x, dep.y);
+          maze.checkPickUp(dep.x, dep.y);
+        } else {
+          [dep.x, dep.y] = [curX, curY];
+        }
+        if (Math.abs(old.x-dep.x)>0.1 || Math.abs(old.y-dep.y)>0.1) {
+          // We have move enough to recreate sprites
+          old.x = dep.x;
+          old.y = dep.y;
+          maze.fl.haveMove = true;
+        }
+        fl.reDraw = true;
+      }
+    }
+    function render(delay) {
+      if (fl.animate && Object.entries(maze.maps).length && 
+         texWall.ready && texSprite.ready && texGuard.ready) {
+        if (maze.fl.rePaintWall) {
+          //console.log("RePaintWall");
+          maze.fl.rePaintWall = false;
+          maze.createWall(maze.maps);
+          initBuffer(maze.wall, wall);
+          fl.reDraw = true;
+        }
+        if (maze.fl.haveMove) {
+          //console.log("RePaintSprite");
+          maze.createSprite(maze.maps);
+          initBuffer(maze.sprite, sprite);
+          fl.reDraw = true;
+        }
+        if (maze.fl.animateDoor) {
+          //console.log("RePaintDoor");
+          maze.createDoor(maze.maps);
+          initBuffer(maze.door, door);
+          fl.reDraw = true;
+        }
+        if (maze.fl.animateGuard || maze.fl.haveMove) {
+          //console.log("RePaintGuard");
+          maze.createGuard();
+          initBuffer(maze.guard, guard);
+          fl.reDraw = true;
+        }
+        maze.fl.haveMove = false;
+        if (fl.reDraw) {
+          fl.reDraw = false;
+          sBar.drawStatus();
+          drawInit();
+          drawScene();
+          //console.log("ReDraw");
+        }
+      }
+    }
+    function animateScene(now) {
+      const delay = now - oldNow;
+      if (oldNow===0 || now===0 || delay>msFrame) { // 20 fps is ok
+        checkKeys();
+        oldNow = now;
+        render(delay);
+      }
+      requestAnimationFrame(animateScene);
+    }
+    loadAllTextures();
+    return {wall, door, sprite, guard, dep, old, fl,
+            initBuffer, render, animateScene};
+  };
+
+  function crSBar() {
+    const cid    = "canv2d";
+    const canvas = document.getElementById(cid);
+    const ctx    = canvas.getContext("2d");
+    const width  = canvas.width;
+    const height = canvas.height;
+    const floor  = 1;
+    const st     = {score: 0, lives: 3, health: 100, ammo: 8, weapon: 1};
+    const pa     = {gold: 500, shoot: 10, health: 5, ammo: 10};
+    //const getShot   = 10;  // Loose 10% each time
+    const zoneWidth  = [0,    1,          2,       1, 1,       1,      1, 2];
+    const zoneText   = [" FLOOR","   SCORE"," LIVES","","HEALTH"," AMMO",""];
+    const zonePad    = [      2,          7,       2, 0,       0,      3, 0];
+    const zoneTot    = zoneWidth.reduce((a,b)=>a+b,0);
+    const zonePixel  = [];
+    const reacWidth  = 25;
+    const reacHeight = 33;
+    var   reacSec    = 20;
+    const imgReac    = new Image();
+    var   fl         = {showReac: false};
+    var ozp = 0;
+    for (const oz of zoneWidth) {
+      ozp += Math.round(width*oz/zoneTot);
+      zonePixel.push(ozp);
+    }
+    function loadReac() {
+      imgReac.onload = function() {
+        fl.showReac = true;
+        drawStatus();
+      };
+      imgReac.src    = "reactions.png";
+    }
+    function drawStatus() {
+      ctx.fillStyle = "blue";
+      ctx.fillRect(0, 0, width, height);
+      ctx.strokeStyle  = "lightblue";
+      ctx.fillStyle    = "white";
+      const mx = 2;
+      const my = 2;
+      const firstLine  = 12;
+      const secondLine = 30;
+      const zoneVal = [floor, st.score, st.lives, null, st.health, st.ammo, null];
+      for (var i=0; i<zonePixel.length-1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(zonePixel[i]+mx, height-my);
+        ctx.lineTo(zonePixel[i]+mx, my);
+        ctx.lineTo(zonePixel[i+1]-mx,my);
+        ctx.stroke();
+        ctx.font = "15px Courier";
+        ctx.fillText(zoneText[i], zonePixel[i]+2*mx, firstLine);
+        ctx.font = "20px Courier";
+        if (zoneVal[i] !== null) {
+          var tx = zoneVal[i].toString().padStart(zonePad[i]," ");
+          tx += ((zoneText[i]==="HEALTH")?"%":"");
+          ctx.fillText(tx, zonePixel[i]+2*mx, secondLine);
+        }
+      }
+      if (fl.showReac) {
+        var sx, sy;
+        if (st.health > 0) {
+          reacSec = (reacSec+1)%59;
+          sx = Math.floor(Math.abs((reacSec-29)/10))*reacWidth;
+          sy = Math.floor((100-st.health)/15)*reacHeight;
+        } else {
+          [sx, sy] = [0,7*reacHeight];
+        }
+        ctx.drawImage(imgReac, sx, sy, reacWidth, reacHeight,
+              zonePixel[3], 1, zonePixel[4]-zonePixel[3], reacHeight);
+      }
+    }
+    loadReac();
+    return {st, pa, loadReac, drawStatus};
+  };
+
+  function crMaze() {
+    const texBox  = 64;       // Texture Box is 64x64 pixels
+    const prevLC  = [0,0];    // Previous l,c
+    const movingDoor  = [];  // Door is opening or closing
+    const movingGuard = [];  // Guard is moving or shooting
+    const wall    = {position: [], index:  [], texCoor: []};
+    const door    = {position: [], index:  [], texCoor: []};
+    const sprite  = {position: [], index:  [], texCoor: []};
+    const guard   = {position: [], index:  [], texCoor: []};
+    const health  = [];  // Keep track of the Health pack that has been taken
+    const ammo    = [];  // Ammo taken
+    const gold    = [];  // Gold taken
+    const fl      = {animateGuard: true, animateDoor: true, rePaintWall: true,
+                     showCeil: true, showFloor: true, haveMove: true};
+    var   connect = [];  // Connection between maps
+
+    var curMapName = "";  // Current map name, where the player is.
+    var curMap     = {};  // Current map imformation
+    var curMaze    = [];  // Current maze character array line and column
+    var bottom     = 0;   // Position of the bottom corner of the current map
+    var left       = 0;   // Position of the left corner of the current map
+    var nbLine     = 0;   // How many line for the current map
+
+    const maps = {};      // All maps for one level.  Object load from json file
+    
+    // First things to do when loading a new maps from json file
+    function initMaps(oneLvlMaps) {
+      // Maps is a const and been in return statement.  Cannot be reinit.
+      for (const mapName in maps) {
+        delete maps[mapName];  // empty it before update it
+      }
+      for (const [mapName, map] of Object.entries(oneLvlMaps)) {
+        maps[mapName] = map;   // Copy it
+      }
+      createConnect();      // Create the connection between maps
+      createMovingGuard();  // Record the behaviour of guards
+      var lc = null;
+      for (const [mapName, map] of Object.entries(maps)) {
+        if (map.start) {    // Find the starting location
+          lc = findPos(maps, mapName, map.start);
+          if (lc) {
+            curPos(mapName);
+            can.dep.x = c2x(lc[1]);
+            can.dep.y = l2y(lc[0]);
+            can.dep.a  = 0;
+          }
+        }
+      }
+    }
+    // create Texture coordonate
+    function fromTexLCToPos(lc, obj) {
+      const top  = lc[0]/obj.height;
+      const left = lc[1]/obj.width;
+      const dl   =     1/obj.height;
+      const dc   =     1/obj.width;
+      var p = [left,top+dl, left,top, left+dc,top+dl, left+dc,top];
+      return p;
+    }
+    function addVerPlan(obj, sx, sy, ex, ey, texNum) {
+      // Add a wall
+      const top = 1;
+      const s = obj.position.length/3;
+      obj.position.push(sx,sy,0, sx,sy,top, ex,ey,0, ex,ey,top);
+      obj.texCoor = obj.texCoor.concat(fromTexLCToPos(texNum, obj));
+      obj.index.push(s, s+3, s+1,   s, s+2, s+3);
+    }
+    function addPerPlan(obj, sx, sy, texNum) {
+    // Add a vertical plan with a perpenticular tilt for sprite
+      const dx = sx-can.dep.x;
+      const dy = sy-can.dep.y;
+      const h2 = 2*Math.sqrt(dx*dx+dy*dy);
+      const ax = dy/h2;
+      const ay = dx/h2;
+      addVerPlan(obj, sx-ax, sy+ay, sx+ax, sy-ay, texNum);
+    }
+    function addHorPlan(obj, sx, sy, ex, ey, h, texNum) {
+      // Add a floor and ceiling
+      const s   = obj.position.length/3;
+      obj.position.push(sx,sy,h, sx,ey,h, ex,sy,h, ex,ey,h);
+      obj.texCoor = obj.texCoor.concat(fromTexLCToPos(texNum, obj));
+      obj.index.push(s, s+3, s+1,   s, s+2, s+3);
+    }
+    function c2x(c) {
+      return (left + c)>>1;
+    }
+    function x2c(x) {
+      return Math.round(2*x-left);
+    }
+    function l2y(l) {
+      return (bottom + nbLine-l)>>1;
+    }
+    function y2l(y) {
+      return Math.round(bottom-2*y+nbLine-1);
+    }
+    function getTile(l,c) {
+      return (0<=l && l<curMaze.length && 0<=c && c<curMaze[l].length)?curMaze[l][c]:"*";
+    }
+    function getTileXY(x,y) {
+      return getTile(y2l(y),x2c(x));
+    }
+    function isWall(l,c) {
+      const mc = getTile(l,c);
+      return  mc === "*" || mc === "+" || curMap.wall[mc] ||
+            (curMap.door[mc] && movingDoor[curMapName+[l,c]]!==0);
+    }
+    function isPushWall(l, c) {
+      return getTile(l,c+1) == "+" || getTile(l+1,c) == "+";
+    }
+    function inLine(from, to) {
+      // We use Bresenham Algo here
+      var    c = from.c;
+      var    l = from.l;
+      const dc = Math.abs(to.c - from.c);
+      const sc = (from.c<to.c)?1:-1;
+      const dl = -Math.abs(to.l - from.l);
+      const sl = (from.l<to.l)?1:-1;
+      var   er = dc + dl;
+      var   e2 = 0;
+      while(!isWall(l,c) && (c!==to.c || l!==to.l)) {
+        e2 = 2*er;
+        if (e2>=dl) {
+          er += dl;
+          c  += sc;
+        }
+        if (e2<=dc) {
+          er += dc;
+          l  += sl;
+        }
+      }
+      return c===to.c && l===to.l;
+    }
+    function isDoor(x, y, ang, d) {
+      // Check if a door is in front of me
+      const cn = curMapName;
+      const dx = d*Math.cos(ang);
+      const dy = d*Math.sin(ang);
+      const st = 2*Math.max(Math.abs(dx), Math.abs(dy));
+      const xi = dx/st;
+      const yi = dy/st;
+      var   mc = getTile(y2l(y), x2c(x));
+      var   pc;  // Previous mc
+      for (var i=0; i<=st && !curMap.door[mc] && !curMap.wall[mc] && 
+                             mc!=="+" && mc!=="*"; i++) {
+        x += xi;
+        y += yi;
+        pc = mc;
+        mc = getTile(y2l(y), x2c(x));
+        if (mc==="*") {
+          var nexName = connect[curMapName].to[pc];
+          if (nexName) { // New Map
+            curPos(nexName[0]);
+            mc = getTile(y2l(y), x2c(x));
+          } else {
+            console.log("I went throught a wall!!");
+          }
+        }
+      }
+      const mlc = curMapName+[y2l(y), x2c(x)];
+      const rsl = (curMap.door[mc] &&
+                   (!isPushWall(y2l(y),x2c(x)) || movingDoor[mlc]===undefined))?mlc:"";
+      curPos(cn);
+      return rsl;
+    }
+    function checkBoundary(cx, cy, x, y) {
+      const  c = x2c(cx); // new x,y
+      const  l = y2l(cy);
+      const pc = x2c(x);  // Previous x,y
+      const pl = y2l(y);
+      const mc = getTile(l,c);
+      if (mc !== "*") {
+        if (isWall(l,c)) {
+          if (!isWall(pl,c)) {
+            cy = y;
+          } else if (!isWall(l,pc)) {
+            cx = x;
+          } else {
+            [cx, cy] = [x,y];
+          }
+        }
+      } else {
+        var sym = curMaze[pl][pc];
+        if (sym in connect[curMapName].to) {
+          var mapName = connect[curMapName].to[sym][0];
+          curPos(mapName);
+          //console.log("CurMap", mapName);
+        }
+      }
+      return [cx, cy];
+    }
+    function checkPickUp(x,y) {
+      const l = y2l(y);
+      const c = x2c(x);
+      const mc = curMaze[l][c];
+      const mn = curMapName+[l,c];
+      if (sBar.st.health<100 && curMap.health && mc in curMap.health && !health[mn]) {
+        health[mn] = true;
+        sBar.st.health = Math.min(sBar.st.health+sBar.pa.health, 100);
+      }
+      if (curMap.ammo && mc in curMap.ammo && !ammo[mn]) {
+        ammo[mn] = true;
+        sBar.st.ammo += sBar.pa.ammo;
+      }
+      if (curMap.gold && mc in curMap.gold && !gold[mn]) {
+        gold[mn] = true;
+        sBar.st.score += sBar.pa.gold;
+      }
+      for (const [mlc, oneGuard] of Object.entries(movingGuard)) {
+        if (oneGuard.dead && oneGuard.ammo && oneGuard.deadAt === mn) {
+          oneGuard.ammo = false;
+          sBar.st.ammo += sBar.pa.ammo;
+        }
+      }
+    }
+    function posMap(mapName) {
+      bottom = connect[mapName].BottLeft[0];
+      left   = connect[mapName].BottLeft[1];
+      nbLine = connect[mapName].nbLine;
+    }
+    function curPos(mapName) {
+      curMapName = mapName;
+      curMap     = maps[mapName];
+      curMaze    = curMap.maze;
+      posMap(curMapName);
+    }
+    function openDoor(x, y, a) {
+      // Try and open a door from ppl position
+      const mlc = isDoor(x, y, a, 1);
+      if (mlc) {
+        const doorPos = movingDoor[mlc];
+        movingDoor[mlc] = (doorPos===0)?-10:100;
+        fl.animateDoor = true;
+      }
+    }
+    function findPos(maps, mapName, sym) {
+      // Find char in a map
+      var lc = null;
+      var c  = 0;
+      const mapArray = maps[mapName].maze;
+      for (var l=0; l<mapArray.length && !lc; l++) {
+        c = mapArray[l].indexOf(sym);
+        if (-1 !== c) {
+          lc = [l,c];
+        }
+      }
+      return lc;
+    }
+    function addToConnect(maps, mapName, sym) {
+      // create a map of connection symbols
+      if (!(mapName in connect)) {
+        connect[mapName] = {nbLine: maps[mapName].maze.length, to:[]};
+      }
+      if (!(sym in connect[mapName])) {
+        const lc = findPos(maps, mapName, sym);
+        if (lc) {
+          connect[mapName][sym] = lc;
+          if ("start" in maps[mapName]) {
+            connect[mapName].BottLeft = [0,0];
+          }
+        } else {
+          console.log("Cannot find symb ",  sym, " in map: ", mapName);
+        }
+      }
+    }
+    function createConnect() {
+      // Find connection LC on every maps, and compute bottom left corner
+      connect = [];
+      // Create connect with all connection point
+      for (const [mapName, map] of Object.entries(maps)) {
+        const conMap = map.connect || [];
+        // Example of symNameSym = ["@", "map1", "#"]
+        // Means : map with sym @ is connected with map1 with sym #
+        for (const [sym, toName, toSym] of conMap) {  // Can have multiple connections on a map
+          addToConnect(maps, mapName, sym);
+          if (!connect[mapName].to[sym]) {
+            connect[mapName].to[sym]  = [toName, toSym];
+          }
+          if (toName in maps) {
+            addToConnect(maps, toName, toSym);
+            if (!connect[toName].to[toSym]) {
+              connect[toName].to[toSym] = [mapName, sym];
+            }
+          }
+        }
+      }
+      var needConnect = true;
+      var count       = 10;   // Should be enough to connect every map
+      while (needConnect && count--) {
+        needConnect = false;
+        for (const [conName, conObj] of Object.entries(connect)) {
+          if (!("BottLeft" in conObj)) {
+            for (const [sym, toCon] of Object.entries(conObj.to)) {
+              var toObj = connect[toCon[0]];
+              if ("BottLeft" in toObj && !("BottLeft" in conObj)) {
+                conObj.BottLeft = [
+                  toObj.BottLeft[0] + (toObj.nbLine       - conObj.nbLine)
+                                    - (toObj[toCon[1]][0] - conObj[sym][0]),
+                  toObj.BottLeft[1] + (toObj[toCon[1]][1] - conObj[sym][1])];
+              } else {
+                needConnect = true;
+              }
+            }
+          }
+        }
+      }
+    }
+    function createWall(maps) {
+      wall.position = [];
+      wall.index    = [];
+      wall.texCoor  = [];
+      for (const [mapName, map] of Object.entries(maps)) {
+        var maxC = 0;
+        const mapArray = map.maze;
+        posMap(mapName);
+        for (let l=0; l<mapArray.length; l++) {
+          const lenC = mapArray[l].length;
+          maxC = Math.max(maxC, lenC);
+          for (let c=0; c<lenC; c++) {
+            var mc = mapArray[l][c];
+            if (mc in map.wall) {
+              var y = l2y(l);
+              var x = c2x(c);
+              if (l%2===0 && c%2) {
+                // Horizontal
+                addVerPlan(wall, x, y, x+1, y, map.wall[mc]);
+              } else if (l%2 && c%2===0) {
+                // Vertical
+                addVerPlan(wall, x, y-1, x, y, map.wall[mc]);
+              }
+            }
+          }
+        }
+        if (fl.showFloor) {
+          addHorPlan(wall, c2x(0),l2y(0),
+            c2x(maxC),l2y(mapArray.length), 0, map.floor);
+        }
+        if (fl.showCeil) {
+         addHorPlan(wall, c2x(0),l2y(0),
+          c2x(maxC),l2y(mapArray.length), 1, map.ceiling);
+        }
+      }
+      posMap(curMapName);
+    }
+    function createDoor(maps) {
+      door.position  = [];
+      door.index     = [];
+      door.texCoor   = [];
+      fl.animateDoor = false;
+      for (const [mapName, map] of Object.entries(maps)) {
+        const mapArray = map.maze;
+        posMap(mapName);
+        for (let l=0; l<mapArray.length; l++) {
+          for (let c=0; c<mapArray[l].length; c++) {
+            var mc = mapArray[l][c];
+            if (mc in map.door) {
+              const mlc     = mapName+[l,c];
+              const doorPos = movingDoor[mlc];
+              var sd = 1;  // Door is closed
+              var pd = 0.5;
+              const isPW = isPushWall(l,c);
+              const sp = isPW?2:10;  // Door push speed is slower
+              if (doorPos) { // Visibility in %: 0 = open(not visible) and undef = close
+                // this door is opening(+) or closing(-)
+                movingDoor[mlc] = (doorPos===-100)?null:(doorPos-sp);
+                sd = Math.abs(doorPos/100);
+                fl.animateDoor |= doorPos!=-100;
+              }
+              if (isPW) {
+                // Push wall
+                pd = 0;
+                if (doorPos) {
+                  pd = 4*(sd-1); // 4 tiles all the time
+                  sd = 1;
+                }
+              }
+              if (doorPos !== 0) {
+                var y = l2y(l);
+                var x = c2x(c);
+                if (c===0 || mapArray[l][c-1]===" " || mapArray[l][c+1]===" ") {
+                  // Vertical
+                  addVerPlan(door, x+pd, y-sd, x+pd, y-sd+1, map.door[mc]);
+                } else {
+                  // Horizontal
+                  addVerPlan(door, x+sd, y-pd, x+sd-1, y-pd, map.door[mc]);
+                }
+              }
+            }
+          }
+        }
+      }
+      posMap(curMapName);
+    }
+    function createSprite(maps) {
+      sprite.position = [];
+      sprite.index    = [];
+      sprite.texCoor  = [];
+      for (const [mapName, map] of Object.entries(maps)) {
+        const mapArray = map.maze;
+        posMap(mapName);
+        for (let l=0; l<mapArray.length; l++) {
+          for (let c=0; c<mapArray[l].length; c++) {
+            const mc = mapArray[l][c];
+            const mn = mapName+[l,c];
+            var texCoor = null;
+            if (map.sprite && mc in map.sprite) {
+              texCoor = map.sprite[mc];
+            } else if (map.ammo   && mc in map.ammo   && !ammo[mn]) {
+              texCoor = map.ammo[mc];
+            } else if (map.health && mc in map.health && !health[mn]) {
+              texCoor = map.health[mc];
+            } else if (map.gold   && mc in map.gold   && !gold[mn]) {
+              texCoor = map.gold[mc];
+            }
+            if (texCoor) {
+              const ys = l2y(l)-0.5;
+              const xs = c2x(c)+0.5;
+              addPerPlan(sprite, xs, ys, texCoor);
+            }
+          }
+        }
+      }
+      posMap(curMapName);
+    }
+    function createMovingGuard() {
+      for (const [mapName, map] of Object.entries(maps)) {
+        curPos(mapName);
+        for (let l=0; l<curMaze.length; l++) {
+          for (let c=0; c<curMaze[l].length; c++) {
+            const mc = curMaze[l][c];
+            if (mc in curMap.guard) {
+              const prm = curMap.guard[mc]; // [0,1] moving dir, [2] level
+              if (1<prm.length) {
+                const ang = 180-(Math.atan2(prm[1], prm[0])*180/Math.PI);
+                movingGuard[curMapName+[l,c]] =
+                  {xy:[c2x(c)+0.5, l2y(l)-0.5], dir:[prm[0], prm[1]],
+                   sec:0, motion:0, ang:ang, health:100, level: prm[2],
+                   dead: false, dying: false, walking: true, ammo:true};
+                fl.animateGuard = true;
+              } else {
+                console.log("No valid Guard prms for map: "+curMapName);
+              }
+            }
+          }
+        }
+      }
+    }
+    function createGuard() {
+      guard.position = [];
+      guard.index    = [];
+      guard.texCoor  = [];
+      const nbGuardImg = 8;  // 8 Angles for a guard (Front, back , ...)
+      const timer      = 5;  // every timer, motion change
+      fl.animateGuard  = false;
+      curPos(curMapName);
+      function sliding(oneGuard) {
+      // Sliding on the wall
+      }
+      function bouncing(oneGuard) {
+      // Bouncing on the wall
+      }
+      function walking(oneGuard) {
+        // Walking
+        const dir = [[1,1], [-1,1], [1,-1], [-1,-1]];
+        var wall = true;
+        var nx, ny, mc;
+        for (var i=0; i<dir.length && wall; i++) {
+          nx = oneGuard.xy[0] + oneGuard.dir[0]*dir[i][0];
+          ny = oneGuard.xy[1] + oneGuard.dir[1]*dir[i][1];
+          if (y2l(ny)<curMaze.length && x2c(nx)<curMaze[y2l(ny)].length) { 
+            mc = curMaze[y2l(ny)][x2c(nx)];
+            wall = mc in curMap.wall || mc in curMap.door || 
+                   mc==="+" || mc==="*" || mc in connect[curMapName].to;
+          } else {
+            console.log(oneGuard, curMapName, y2l(ny), x2c(nx), 
+                     curMap.length, curMaze[y2l(ny)].length);
+          }
+        }
+        if (!wall) {
+          oneGuard.xy[0] = nx;
+          oneGuard.xy[1] = ny;
+          if (i !== 1) {  // Guard bounce on a wall
+            oneGuard.dir[0] *= dir[i-1][0];
+            oneGuard.dir[1] *= dir[i-1][1];
+            oneGuard.ang     = 180-(Math.atan2(oneGuard.dir[1], oneGuard.dir[0])*180/Math.PI);
+          }
+          const angle = (oneGuard.ang+360+
+              Math.atan2(oneGuard.xy[1]-can.dep.y, oneGuard.xy[0]-can.dep.x)*180/Math.PI)%360;
+          const sec = Math.floor(((angle+360/nbGuardImg/2)%360)/(360/nbGuardImg))%nbGuardImg;
+          oneGuard.sec = oneGuard.sec%40;  // Walking or Running is 4 images in a sequence
+          const wp = 1+oneGuard.level*7+Math.floor(oneGuard.sec/10);  // Move 10 times and change its image
+          //console.log(wp,sec);
+          //error();
+          addPerPlan(guard, nx, ny, [wp,sec]);       // wp is table's line, sec is column
+        } else {
+          console.log("This guard is stuck, no idea why", oneGuard);
+        }
+      }
+      function dying(oneGuard) {
+        addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+5, oneGuard.motion]);
+        if (oneGuard.sec%timer === 0) {
+          oneGuard.motion++;
+          if (oneGuard.motion === 4) {
+            oneGuard.dead  = true;
+            oneGuard.deadAt = curMapName+[y2l(oneGuard.xy[1]), x2c(oneGuard.xy[0])];
+            sBar.st.score += 10;  // Yea
+          }
+        }
+      }
+      function getShot(oneGuard) {
+        if (sBar.st.ammo) {
+          addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+5,0]);
+          oneGuard.health  -= 50;
+          oneGuard.sec      = 0;
+          oneGuard.motion   = 0;
+          if (oneGuard.health <= 0) {
+            oneGuard.action = dying;
+            oneGuard.dying  = true;
+          } else {
+            oneGuard.action = animGetShot;
+          }
+        } else {
+          addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+6, oneGuard.motion]);
+          oneGuard.action = shooting;
+        }
+      }
+      function animGetShot(oneGuard) {
+        addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+5,0]);
+        if (oneGuard.sec%timer === 0) {
+          oneGuard.sec = 0;
+          oneGuard.motion = 0;
+          oneGuard.action = shooting;
+        }
+      }
+      function shooting(oneGuard) {
+        addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+6, oneGuard.motion]);
+        if (oneGuard.sec%timer === 0) {
+          oneGuard.motion = 1 + oneGuard.motion%2;
+          if (oneGuard.motion === 2) {
+            sBar.st.health -= sBar.pa.shoot;
+          }
+        }
+        if (sBar.st.health<=0 || 
+            !inLine({l:y2l(can.dep.y),   c:x2c(can.dep.x)}, 
+                    {l:y2l(oneGuard.xy[1]), c:x2c(oneGuard.xy[0])})) {
+          oneGuard.action = walking;
+          oneGuard.sec = 0;
+        }
+      }
+      function stop(oneGuard) {
+        addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+5,0]);
+      }
+      // Function start here
+      for (const [mlc, oneGuard] of Object.entries(movingGuard)) {
+        if (curMapName === mlc.substr(0, curMapName.length)) {
+          if (!oneGuard.dead) {
+            oneGuard.sec++;
+            if (oneGuard.walking) {
+              oneGuard.walking = false;
+              oneGuard.action  = walking;
+            }
+            if (oneGuard.getShot) {
+              oneGuard.getShot = false;
+              if (!oneGuard.dying) {
+                oneGuard.action = getShot;
+              }
+            }
+            oneGuard.action(oneGuard);
+            fl.animateGuard = true;
+          } else {  // Dead Guard
+            addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+5,4]);
+          }
+        }
+      }
+    }
+    function shootGuard() {
+      // Shoot a guard
+      sBar.st.ammo = Math.max(sBar.st.ammo-1, 0);
+      for (const [name, oneGuard] of Object.entries(movingGuard)) {
+        const sa = 5;  // Shooting angle in degree
+        const ag = (360+Math.atan2(oneGuard.xy[1]-can.dep.y, 
+                                   oneGuard.xy[0]-can.dep.x)*180/Math.PI)%360;
+        const av = can.dep.a*180/Math.PI;
+        if (Math.abs(ag-av+sa/2)%360 < sa &&
+          inLine({l:y2l(can.dep.y),   c:x2c(can.dep.x)}, 
+                 {l:y2l(oneGuard.xy[1]), c:x2c(oneGuard.xy[0])})) {
+          oneGuard.getShot = true;
+        }
+      }
+    }
+    return {maps, wall, door, sprite, guard, fl,
+            initMaps, createWall, createDoor, createSprite, createGuard,
+            openDoor, shootGuard, checkBoundary, checkPickUp};
+  };
+
+  function crGame() {
+    function loadMaps(maps) {
+      if (maps) {
+        maze.initMaps(maps);
+      } else {
+        console.log("No Maps");
+      }
+    }
+    return {loadMaps};
+  };
+  // It starts here
+  // TO DO:  
+  // 1) More guard on map with a toggle agressivity
+  // 2) More floor for ep #1
+  // 3) When a player dies
+  // 4) Save and load game
+  // 5) Score screen
+  // 6) Show weapon and animate it
+  // 7) White area problem with Ceiling and Floor
+  // Done:
+  // 1) Can shoot throught a wall
+  // 2) Dying when getShot ok
+  // 3) Open door between map is ok
+  // 4) Dogs and all orthers guards ok
+  const HTML = crHTML();
+  const maze = crMaze();
+  const can  = crCan();
+  const sBar = crSBar();
+  const game = crGame();
+  function init() {
+    console.log("Start");
+    fetch("level0.json")
+        .then(response => response.json())
+        .then(maps     => game.loadMaps(maps));
+    can.animateScene(0);
+  }
+  window.onload = init;
+  </script>
+ </body>
+</html>

@@ -21,4 +21,8 @@
  <p>Ephemeris: <p>
  - https://staubinr.github.io/Ephemeris/EphemerisPDF.html
  </li>
+ <li>
+ <p>Woldfenstein3D Simple Engine: <p>
+ - https://staubinr.github.io/Wolfenstein3D/Wolf3DV1.html
+ </li>
 </ul>
