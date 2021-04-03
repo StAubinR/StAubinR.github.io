@@ -2,17 +2,28 @@
 <html>
  <head>
   <meta charset="utf-8">
-  <title>Wolf</title>
+  <title>Wolf3D</title>
   <style>
    body { 
     margin: 0px;
     overflow: hidden;
    }
+   #box {
+     position: relative;
+   }
+   #canWeapon {
+     position: absolute;
+     bottom: 5px;
+     left:   256px;
+   }
   </style>
  </head>
  <body style="background-color: #004040">
-  <canvas id="canv3d" width="320px" height="200px" style="width:640px;height:400px;"></canvas><br>
-  <canvas id="canv2d" width="640px" height="35px"  style="width:640px;height:85px;"></canvas>
+   <div id="box">
+    <canvas id="canv3d" width="320px" height="200px" style="width:640px;height:400px;"></canvas>
+    <canvas id="canWeapon" width="64px"  height="64px"  style="width:128px; height:128px;" ></canvas>
+   </div>
+  <canvas id="canvStatus" width="640px" height="35px"  style="width:640px;height:85px;"></canvas>
   <div id="errMsg"></div>
   <script id="lvl0" type="text/javascript" src="Mat4Class.js"></script>
   <script id="vertex-shader-3d" type="glsl">
@@ -472,6 +483,9 @@
           drawScene();
           //console.log("ReDraw");
         }
+        if (sBar.fl.shooting) {
+          sBar.drawWeapon();
+        }
       }
     }
     function animateScene(now) {
@@ -489,11 +503,16 @@
   };
 
   function crSBar() {
-    const cid    = "canv2d";
-    const canvas = document.getElementById(cid);
-    const ctx    = canvas.getContext("2d");
-    const width  = canvas.width;
-    const height = canvas.height;
+    const sid    = "canvStatus";
+    const canSta = document.getElementById(sid);
+    const ctx    = canSta.getContext("2d");
+    const sWid   = canSta.width;
+    const sHei   = canSta.height;
+    const wid    = "canWeapon";
+    const canWea = document.getElementById(wid);
+    const wctx   = canWea.getContext("2d");
+    const wWid   = canWea.width;
+    const wHei   = canWea.height;
     const floor  = 1;
     const st     = {score: 0, lives: 3, health: 100, ammo: 8, weapon: 1};
     const pa     = {gold: 500, shoot: 10, health: 5, ammo: 10};
@@ -506,11 +525,14 @@
     const reacWidth  = 25;
     const reacHeight = 33;
     var   reacSec    = 20;
+    var   curWeapon  = 1; // Current weapon for Shooting;
     const imgReac    = new Image();
-    var   fl         = {showReac: false};
+    const imgWeap    = new Image();
+    var   fl         = {showReac: false, showWeap: false, shoot: false, shooting: false};
+    var shSec = 0;
     var ozp = 0;
     for (const oz of zoneWidth) {
-      ozp += Math.round(width*oz/zoneTot);
+      ozp += Math.round(sWid*oz/zoneTot);
       zonePixel.push(ozp);
     }
     function loadReac() {
@@ -520,9 +542,16 @@
       };
       imgReac.src    = "reactions.png";
     }
+    function loadWeap() {
+      imgWeap.onload = function() {
+        fl.showWeap = true;
+        drawWeapon(true);
+      };
+      imgWeap.src    = "weapon.png";
+    }
     function drawStatus() {
       ctx.fillStyle = "blue";
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, sWid, sHei);
       ctx.strokeStyle  = "lightblue";
       ctx.fillStyle    = "white";
       const mx = 2;
@@ -532,7 +561,7 @@
       const zoneVal = [floor, st.score, st.lives, null, st.health, st.ammo, null];
       for (var i=0; i<zonePixel.length-1; i++) {
         ctx.beginPath();
-        ctx.moveTo(zonePixel[i]+mx, height-my);
+        ctx.moveTo(zonePixel[i]+mx, sHei-my);
         ctx.lineTo(zonePixel[i]+mx, my);
         ctx.lineTo(zonePixel[i+1]-mx,my);
         ctx.stroke();
@@ -558,8 +587,46 @@
               zonePixel[3], 1, zonePixel[4]-zonePixel[3], reacHeight);
       }
     }
+    function drawWeapon(draw) {
+      var l,c;
+      if (fl.showWeap) {
+        [l,c] = [st.ammo?st.weapon:0,0];
+        if (fl.shoot) {
+          curWeapon   = l;
+          fl.shooting = true;
+          fl.shoot    = false;
+          shSec = 0;
+        }
+        if (fl.shooting) {
+          if (shSec<=10) {
+            l = curWeapon;
+            c = Math.floor(shSec/2)%5;
+            shSec++;
+          } else {
+            fl.shooting = false;
+            draw = st.ammo===0;
+          }
+        }
+        if (fl.shooting || draw) {
+          wctx.clearRect(0, 0, 64, 64);
+          wctx.drawImage(imgWeap, c*64, l*64, 64, 64, 0, 0, 64, 64);
+        }
+      }
+    }
+    function addAmmo(qty) {
+      // Add or substract
+      console.log("addAmmo", st.ammo, qty);
+      const preAmmo = st.ammo;
+      const curAmmo = Math.min(Math.max(st.ammo+qty,0),99);
+      if (curAmmo===0 ^ preAmmo===0) {
+        sBar.drawWeapon(true);
+      }
+      st.ammo = curAmmo;
+      return curAmmo === preAmmo;
+    }
     loadReac();
-    return {st, pa, loadReac, drawStatus};
+    loadWeap();
+    return {st, pa, fl, loadReac, drawStatus, drawWeapon, addAmmo};
   };
 
   function crMaze() {
@@ -762,7 +829,7 @@
       }
       if (curMap.ammo && mc in curMap.ammo && !ammo[mn]) {
         ammo[mn] = true;
-        sBar.st.ammo += sBar.pa.ammo;
+        sBar.addAmmo(sBar.pa.ammo);
       }
       if (curMap.gold && mc in curMap.gold && !gold[mn]) {
         gold[mn] = true;
@@ -771,7 +838,7 @@
       for (const [mlc, oneGuard] of Object.entries(movingGuard)) {
         if (oneGuard.dead && oneGuard.ammo && oneGuard.deadAt === mn) {
           oneGuard.ammo = false;
-          sBar.st.ammo += sBar.pa.ammo;
+          sBar.addAmmo(sBar.pa.ammo);
         }
       }
     }
@@ -985,6 +1052,7 @@
       posMap(curMapName);
     }
     function createMovingGuard() {
+      const guardHealth = [50, 100, 200, 300, 400]; // Dogs, guard, elite ...
       for (const [mapName, map] of Object.entries(maps)) {
         curPos(mapName);
         for (let l=0; l<curMaze.length; l++) {
@@ -995,8 +1063,8 @@
               if (1<prm.length) {
                 const ang = 180-(Math.atan2(prm[1], prm[0])*180/Math.PI);
                 movingGuard[curMapName+[l,c]] =
-                  {xy:[c2x(c)+0.5, l2y(l)-0.5], dir:[prm[0], prm[1]],
-                   sec:0, motion:0, ang:ang, health:100, level: prm[2],
+                  {xy:[c2x(c)+0.5, l2y(l)-0.5], dir:[prm[0], prm[1]], sec:0, motion:0,
+                   ang:ang, level: prm[2], health:guardHealth[prm[2]],
                    dead: false, dying: false, walking: true, ammo:true};
                 fl.animateGuard = true;
               } else {
@@ -1070,20 +1138,17 @@
         }
       }
       function getShot(oneGuard) {
-        if (sBar.st.ammo) {
-          addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+5,0]);
-          oneGuard.health  -= 50;
-          oneGuard.sec      = 0;
-          oneGuard.motion   = 0;
-          if (oneGuard.health <= 0) {
-            oneGuard.action = dying;
-            oneGuard.dying  = true;
-          } else {
-            oneGuard.action = animGetShot;
-          }
+        const dmgWeapon = [25, 50, 75, 125, 150, 200, 300];
+        const weapon = sBar.st.ammo?sBar.st.weapon:0;
+        addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+5,0]);
+        oneGuard.health  -= dmgWeapon[weapon];
+        oneGuard.sec      = 0;
+        oneGuard.motion   = 0;
+        if (oneGuard.health <= 0) {
+          oneGuard.action = dying;
+          oneGuard.dying  = true;
         } else {
-          addPerPlan(guard, oneGuard.xy[0], oneGuard.xy[1], [oneGuard.level*7+6, oneGuard.motion]);
-          oneGuard.action = shooting;
+          oneGuard.action = animGetShot;
         }
       }
       function animGetShot(oneGuard) {
@@ -1102,9 +1167,7 @@
             sBar.st.health -= sBar.pa.shoot;
           }
         }
-        if (sBar.st.health<=0 || 
-            !inLine({l:y2l(can.dep.y),   c:x2c(can.dep.x)}, 
-                    {l:y2l(oneGuard.xy[1]), c:x2c(oneGuard.xy[0])})) {
+        if (sBar.st.health<=0) {
           oneGuard.action = walking;
           oneGuard.sec = 0;
         }
@@ -1137,7 +1200,6 @@
     }
     function shootGuard() {
       // Shoot a guard
-      sBar.st.ammo = Math.max(sBar.st.ammo-1, 0);
       for (const [name, oneGuard] of Object.entries(movingGuard)) {
         const sa = 5;  // Shooting angle in degree
         const ag = (360+Math.atan2(oneGuard.xy[1]-can.dep.y, 
@@ -1146,9 +1208,13 @@
         if (Math.abs(ag-av+sa/2)%360 < sa &&
           inLine({l:y2l(can.dep.y),   c:x2c(can.dep.x)}, 
                  {l:y2l(oneGuard.xy[1]), c:x2c(oneGuard.xy[0])})) {
+          // Ok this guard is in front of me and in line of sight
           oneGuard.getShot = true;
         }
       }
+      sBar.fl.shoot   = true;
+      sBar.drawWeapon();
+      sBar.addAmmo(-1);
     }
     return {maps, wall, door, sprite, guard, fl,
             initMaps, createWall, createDoor, createSprite, createGuard,
