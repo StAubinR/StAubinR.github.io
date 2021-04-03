@@ -615,14 +615,11 @@
     }
     function addAmmo(qty) {
       // Add or substract
-      console.log("addAmmo", st.ammo, qty);
       const preAmmo = st.ammo;
-      const curAmmo = Math.min(Math.max(st.ammo+qty,0),99);
-      if (curAmmo===0 ^ preAmmo===0) {
+      st.ammo = Math.min(Math.max(st.ammo+qty,0),99);
+      if (st.ammo===0 ^ preAmmo===0) {
         sBar.drawWeapon(true);
       }
-      st.ammo = curAmmo;
-      return curAmmo === preAmmo;
     }
     loadReac();
     loadWeap();
