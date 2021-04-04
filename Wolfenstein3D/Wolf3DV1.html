@@ -332,6 +332,12 @@
       Mat4Class.translate(modelViewMatrix,     // destination matrix
             modelViewMatrix,           // matrix to translate
            [-dep.x, -dep.y, -dep.z]);   // amount to translate
+      for (var i=0; i<modelViewMatrix.length; i++) {
+        // Wierd things happen at 45' without that.  
+        // Horizontal planes go white and at the wrong place.
+        // May be sensitive Matrix.
+        modelViewMatrix[i] = Math.round(modelViewMatrix[i]*100000)/100000;
+      }
       gl.uniformMatrix4fv(modelViewUniLoc, false, modelViewMatrix);
       // Draw other object
       drawObj(wall,   texWall);
@@ -681,7 +687,7 @@
       const left = lc[1]/obj.width;
       const dl   =     1/obj.height;
       const dc   =     1/obj.width;
-      var p = [left,top+dl, left,top, left+dc,top+dl, left+dc,top];
+      const p = [left,top+dl, left,top, left+dc,top+dl, left+dc,top];
       return p;
     }
     function addVerPlan(obj, sx, sy, ex, ey, texNum) {
@@ -958,12 +964,10 @@
           }
         }
         if (fl.showFloor) {
-          addHorPlan(wall, c2x(0),l2y(0),
-            c2x(maxC),l2y(mapArray.length), 0, map.floor);
+          addHorPlan(wall, c2x(0),l2y(0), c2x(maxC),l2y(mapArray.length), 0, map.floor);
         }
         if (fl.showCeil) {
-         addHorPlan(wall, c2x(0),l2y(0),
-          c2x(maxC),l2y(mapArray.length), 1, map.ceiling);
+          addHorPlan(wall, c2x(0),l2y(0), c2x(maxC),l2y(mapArray.length), 1, map.ceiling);
         }
       }
       posMap(curMapName);
@@ -1228,20 +1232,19 @@
     }
     return {loadMaps};
   };
-  // It starts here
   // TO DO:  
   // 1) More guard on map with a toggle agressivity
   // 2) More floor for ep #1
   // 3) When a player dies
   // 4) Save and load game
   // 5) Score screen
-  // 6) Show weapon and animate it
-  // 7) White area problem with Ceiling and Floor
   // Done:
   // 1) Can shoot throught a wall
   // 2) Dying when getShot ok
   // 3) Open door between map is ok
   // 4) Dogs and all orthers guards ok
+  // 5) Show weapon and animate it
+  // 6) White area problem with Ceiling and Floor
   const HTML = crHTML();
   const maze = crMaze();
   const can  = crCan();
