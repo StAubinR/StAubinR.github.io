@@ -1,8 +1,8 @@
   // Matrix tools
-  class Mat4Class {
+  const Mat4Class = (function() {
       //  Create
       // from GitHub gl-matrix/src/mat4.js
-      static create() {
+      function create() {
         let out = new Float32Array(16);
         out[0] = 1;
         out[5] = 1;
@@ -11,7 +11,7 @@
         return out;
       }
       // Perspective
-      static perspective(out, fovy, aspect, near, far) {
+      function perspective(out, fovy, aspect, near, far) {
         const f = 1.0 / Math.tan(fovy / 2);
         out[0] = f / aspect;
         out[1] = 0;
@@ -38,7 +38,7 @@
         return out;
       }
       // Translate
-      static translate(out, a, v) {
+      function translate(out, a, v) {
         let x = v[0],
             y = v[1],
             z = v[2];
@@ -83,7 +83,7 @@
         return out;
       }
       // Rotate
-      static rotate(out, a, rad, axis) {
+      function rotate(out, a, rad, axis) {
       /*
        * Rotates a mat4 by the given angle around the given axis
        *
@@ -165,4 +165,5 @@
         }
         return out;
       }
-  }
+      return {create, perspective, translate, rotate};
+  }());
