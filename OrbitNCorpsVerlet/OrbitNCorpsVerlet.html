@@ -110,14 +110,13 @@ function Graph(left, width, top, height) {
   }
   function clearCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    grid(8, 0.01, 6, 0.01);
   }
-  setScale(-2, -2, 2, 2);
-  grid(10, 0.01, 10, 0.01);
+  setScale(-2, -1.5, 2, 1.5);
   return {clearCanvas, courbeXY};
 }
 
 function Html() {
-  const da  = document.getElementById('data');
   const dm  = document.getElementById('dm');
   const dx  = document.getElementById('dx');
   const dy  = document.getElementById('dy');
@@ -133,15 +132,14 @@ function Html() {
   function slider(sObj, iObj) {
     sObj.oninput = function() {
       iObj.value = sObj.value;
-      proc();
     };
     sObj.onmouseup = function() {
       iObj.value = sObj.value;
-      proc(true);
+      showData();
     };
     iObj.onchange = function() {
       sObj.value = iObj.value;
-      proc(true);
+      showData();
     }
   }
   function addElem(parent, type, text, ind, value) {
@@ -163,34 +161,35 @@ function Html() {
     while (adm[n-1] === 0) {
       n--;
     }
-    nIn.value = n;
-    nSl.value = n;
+    if (n!==Number(nIn.value)) {
+      nIn.value = n;
+      nSl.value = n;
+      showData();
+    }
     return n;
   }
-  function proc(reset) {
-    if (reset) {
-      const n = Number(nIn.value);
-      dm.innerHTML = '';
-      dx.innerHTML = '';
-      dy.innerHTML = '';
-      dvx.innerHTML = '';
-      dvy.innerHTML = '';
-      for (let i=0; i<n; i++) {
-        addElem(dm,  'INPUT', '', i, adm[i].toFixed(1)).addEventListener("change", 
-          (ev)=>{adm[ev.target.cellIndex] = Number(ev.target.value);});
-        addElem(dx,  'INPUT', '', i, adx[i].toFixed(1)).addEventListener("change", 
-          (ev)=>{adx[ev.target.cellIndex] = Number(ev.target.value);});
-        addElem(dy,  'INPUT', '', i, ady[i].toFixed(1)).addEventListener("change", 
-          (ev)=>{ady[ev.target.cellIndex] = Number(ev.target.value);});
-        addElem(dvx, 'INPUT', '', i, advx[i].toFixed(1)).addEventListener("change", 
-          (ev)=>{advx[ev.target.cellIndex] = Number(ev.target.value);});
-        addElem(dvy, 'INPUT', '', i, advy[i].toFixed(1)).addEventListener("change", 
-          (ev)=>{advy[ev.target.cellIndex] = Number(ev.target.value);})
-      }
+  function showData() {
+    const n = Number(nIn.value);
+    dm.innerHTML = '';
+    dx.innerHTML = '';
+    dy.innerHTML = '';
+    dvx.innerHTML = '';
+    dvy.innerHTML = '';
+    for (let i=0; i<n; i++) {
+      addElem(dm,  'INPUT', '', i, adm[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{adm[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dx,  'INPUT', '', i, adx[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{adx[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dy,  'INPUT', '', i, ady[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{ady[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dvx, 'INPUT', '', i, advx[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{advx[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dvy, 'INPUT', '', i, advy[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{advy[ev.target.cellIndex] = Number(ev.target.value);})
     }
   }
   slider(nSl, nIn);
-  return {proc, slider, getNbPla, adm, adx, ady, advx, advy};
+  return {showData, slider, getNbPla, adm, adx, ady, advx, advy};
 }
 
 function Orbit(plan, html) {
@@ -245,10 +244,10 @@ function Orbit(plan, html) {
   // 2) Initialisation des conditions initiales : t=0, r=r0 et v=v0.
   // 3) Définition de la fonction a(r).
   // 4) Tant que t≤T faire :
-  //    1) Calcul de a0=a(r).
-  //    2) Nouvelle position : r=r+hv+h*h*a0/2.
-  //    3) Calcul de a1=a(r).
-  //    4) Nouvelle vitesse : v=v+h(a0+a1)/2
+  //    1) Calcul de a(t)=fa(r(t))
+  //    2) Nouvelle position : r(t+h)=r(t)+h*v(t)+h*h*a(t)/2.
+  //    3) Calcul de a(t+h)=fa(r(t+h)).
+  //    4) Nouvelle vitesse : v(t+h)=v(t)+h(a(t)+a(t+h))/2
   //    5) t=t+h.
   //    6) Enregistrement des données
   const g = 4*Math.pow(Math.PI,2);
@@ -293,8 +292,7 @@ function Orbit(plan, html) {
     cvx = html.advx.slice();
     cvy = html.advy.slice();
     nbP = html.getNbPla();
-    html.proc(true);
-    
+    html.showData();
     centerPath(nbP, cm, cvx, cvy);
     plan.clearCanvas();
   }
@@ -312,10 +310,11 @@ function newTrace() {
   orbit.newTrace();
 }
 
-const plan  = Graph(cLeft, cWidth-cLeft, cTop, cHeight-cTop);
-const html  = Html();
-const orbit = Orbit(plan, html); 
+var orbit;
 function start() {
+  const plan  = Graph(cLeft, cWidth-cLeft, cTop, cHeight-cTop);
+  const html  = Html();
+  orbit = Orbit(plan, html);
   orbit.newTrace();
 }
 </script>
