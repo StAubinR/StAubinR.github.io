@@ -224,21 +224,6 @@ function Orbit(plan, html) {
     }
     return [ax, ay];
   }
-  function centerPath(n, m, vx, vy) {
-    // Som m*v should be 0
-    var sx = 0;
-    var sy = 0;
-    for (let i=0; i<n; i++) {
-      sx += m[i]*vx[i];
-      sy += m[i]*vy[i];
-    }
-    sx = sx/n;
-    sy = sy/n;
-    for (let i=0; i<n; i++) {
-      vx[i] -= sx/m[i];
-      vy[i] -= sy/m[i];
-    }
-  }
   // Algo
   // 1) Initialisation du pas h et de la durée T.
   // 2) Initialisation des conditions initiales : t=0, r=r0 et v=v0.
@@ -251,9 +236,11 @@ function Orbit(plan, html) {
   //    5) t=t+h.
   //    6) Enregistrement des données
   const g = 4*Math.pow(Math.PI,2);
+  // g unit is: Time is years, unit masse is the sun,
+  //            and distance is sun earth (UA)
   function comp() {
-    const lastT  = 0.1;
-    const h      = lastT/nbStep;
+    const clickTime  = 1/12;  // One click a month
+    const h      = clickTime/nbStep;
     const hg     = h*g;
     const hgd2   = hg/2;
     const h2     = h*h;
@@ -293,7 +280,6 @@ function Orbit(plan, html) {
     cvy = html.advy.slice();
     nbP = html.getNbPla();
     html.showData();
-    centerPath(nbP, cm, cvx, cvy);
     plan.clearCanvas();
   }
   for (let i=0; i<maxPlanets; i++) {
