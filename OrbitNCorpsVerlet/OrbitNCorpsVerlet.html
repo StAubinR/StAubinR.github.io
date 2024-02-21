@@ -218,9 +218,12 @@ function Html() {
     }
   }
   function defVal(ev) {
-    const et = ev.target;
+    const et   = ev.target;
     const name = et.options[et.selectedIndex].text;
-    copObj(aDef, pats[name]);
+    const cPat = pats[name];
+    copObj(aDef, cPat);
+    nIn.value = cPat.adm.length;
+    nSl.value = cPat.adm.length;
     newTrace();
   }
   function crSelect(parent, names) {
