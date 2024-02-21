@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <body onload="start();">
-  Orbite 2D à N corps<br>
+  <h3>Orbit simulation using Verlet integration</h3>
+  <div id="pat">Orbit pattern: </div>
   <span>N</span>
   <input class="box" type="number" id="n"  min="2" max="9" value="3">
   <input class="sli" type="range"  id="sn" min="2" max="9" step="1" value="3"><br>
@@ -47,12 +48,8 @@ input.sli { width: 250px; }
 </style>
 <script>
 "use strict"
-const cLeft   = 25;
-const cTop    = 25;
-const cWidth  = 600-cLeft;
-const cHeight = 400-cTop;
-function Graph(left, width, top, height) {
-  const canvas = document.getElementById('can');
+function Graph(can, left, width, top, height) {
+  const canvas = document.getElementById(can);
   const ctx    = canvas.getContext('2d');
   var x1, y1, x2, y2, mx, my, bx, by;
   function setScale(px1, py1, px2, py2) {
@@ -110,13 +107,12 @@ function Graph(left, width, top, height) {
   }
   function clearCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    grid(8, 0.01, 6, 0.01);
   }
-  setScale(-2, -1.5, 2, 1.5);
-  return {clearCanvas, courbeXY};
+  return {clearCanvas, courbeXY, setScale, grid};
 }
 
 function Html() {
+  const dpa = document.getElementById('pat');
   const dm  = document.getElementById('dm');
   const dx  = document.getElementById('dx');
   const dy  = document.getElementById('dy');
@@ -124,11 +120,38 @@ function Html() {
   const dvy = document.getElementById('dvy');
   const nIn = document.getElementById('n');
   const nSl = document.getElementById('sn');
-  const adm  = [ 1, 1, 1, 0, 0, 0, 0, 0, 0, 0];
-  const adx  = [-1, 1, 0, 0, 0, 0, 0, 0, 0, 0];
-  const ady  = [ 0, 0, 1, 0, 0, 0, 0, 0, 0, 0];
-  const advx = [ 0, 0, 1, 0, 0, 0, 0, 0, 0, 0];
-  const advy = [-1, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+  const aDef = {};
+  const maxPlanets = 10;
+  const dpi  = 2*Math.PI;
+  const dpio = 2*3.1;
+  const pvx  = -0.93240737*dpi;
+  const pvy  = -0.86473146*dpi;
+  const pvxo = -0.93240737*dpio;
+  const pvyo = -0.86473146*dpio;
+  const px   =  0.97000436;
+  const py   = -0.24308753;
+  const pats = {"Flowers": {
+                  "adm": [ 1, 1, 1],
+                  "adx": [-1, 1, 0],
+                  "ady": [ 0, 0, 1],
+                  "advx":[ 0, 0, 1],
+                  "advy":[-1, 1, 0]
+                },
+                "Euler Figure-8 Stable": {
+                  "adm": [ 1, 1, 1],
+                  "adx": [px, -px, 0],
+                  "ady": [py, -py, 0],
+                  "advx":[ -pvx/2, -pvx/2, pvx],
+                  "advy":[ -pvy/2, -pvy/2, pvy]
+                },
+                "Euler Figure-8 Unstable": {
+                  "adm": [ 1, 1, 1],
+                  "adx": [px, -px, 0],
+                  "ady": [py, -py, 0],
+                  "advx":[ -pvxo/2, -pvxo/2, pvxo],
+                  "advy":[ -pvyo/2, -pvyo/2, pvyo]
+                }
+  }
   function slider(sObj, iObj) {
     sObj.oninput = function() {
       iObj.value = sObj.value;
@@ -158,7 +181,7 @@ function Html() {
   }
   function getNbPla() {
     var n = Number(nIn.value);
-    while (adm[n-1] === 0) {
+    while (aDef.adm[n-1] === 0) {
       n--;
     }
     if (n!==Number(nIn.value)) {
@@ -176,27 +199,56 @@ function Html() {
     dvx.innerHTML = '';
     dvy.innerHTML = '';
     for (let i=0; i<n; i++) {
-      addElem(dm,  'INPUT', '', i, adm[i].toFixed(1)).addEventListener("change", 
-        (ev)=>{adm[ev.target.cellIndex] = Number(ev.target.value);});
-      addElem(dx,  'INPUT', '', i, adx[i].toFixed(1)).addEventListener("change", 
-        (ev)=>{adx[ev.target.cellIndex] = Number(ev.target.value);});
-      addElem(dy,  'INPUT', '', i, ady[i].toFixed(1)).addEventListener("change", 
-        (ev)=>{ady[ev.target.cellIndex] = Number(ev.target.value);});
-      addElem(dvx, 'INPUT', '', i, advx[i].toFixed(1)).addEventListener("change", 
-        (ev)=>{advx[ev.target.cellIndex] = Number(ev.target.value);});
-      addElem(dvy, 'INPUT', '', i, advy[i].toFixed(1)).addEventListener("change", 
-        (ev)=>{advy[ev.target.cellIndex] = Number(ev.target.value);})
+      addElem(dm,  'INPUT', '', i, aDef.adm[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.adm[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dx,  'INPUT', '', i, aDef.adx[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.adx[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dy,  'INPUT', '', i, aDef.ady[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.ady[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dvx, 'INPUT', '', i, aDef.advx[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.advx[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dvy, 'INPUT', '', i, aDef.advy[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.advy[ev.target.cellIndex] = Number(ev.target.value);})
     }
   }
-  slider(nSl, nIn);
-  return {showData, slider, getNbPla, adm, adx, ady, advx, advy};
+  function copObj(to, from) {
+    const zeroArray = new Array(maxPlanets-from.adm.length).fill(0);
+    for (let index in from) {
+      to[index] = from[index].concat(zeroArray);
+    }
+  }
+  function defVal(ev) {
+    const et = ev.target;
+    const name = et.options[et.selectedIndex].text;
+    copObj(aDef, pats[name]);
+    newTrace();
+  }
+  function crSelect(parent, names) {
+    const select = document.createElement("select");
+    select.id = "patSel";
+    for (let index in names) {
+      const option = document.createElement("option");
+      option.value = index;
+      option.text  = index;
+      select.appendChild(option);
+    }
+    parent.appendChild(select);
+    select.addEventListener("change", defVal);
+  }
+  crSelect(dpa, pats);
+  copObj(aDef, pats["Flowers"]);
+  slider(nSl, nIn, aDef);
+  return {showData, slider, getNbPla, aDef, maxPlanets};
 }
 
 function Orbit(plan, html) {
   const nbStep     = 1000;
-  const maxPlanets = html.adm.length;
-  const x   = new Array(maxPlanets);
-  const y   = new Array(maxPlanets);
+  const maxPlanets = html.maxPlanets;
+  const g = 4*Math.pow(Math.PI,2);
+  // g unit is: Time is years, unit masse is the sun,
+  //            and distance is sun earth (UA)
+  const x = new Array(maxPlanets);
+  const y = new Array(maxPlanets);
   var   nbP = html.getNbPla();
   var cm, cx, cy, cvx, cvy;
   function square(x) {
@@ -235,11 +287,8 @@ function Orbit(plan, html) {
   //    4) Nouvelle vitesse : v(t+h)=v(t)+h(a(t)+a(t+h))/2
   //    5) t=t+h.
   //    6) Enregistrement des données
-  const g = 4*Math.pow(Math.PI,2);
-  // g unit is: Time is years, unit masse is the sun,
-  //            and distance is sun earth (UA)
   function comp() {
-    const clickTime  = 1/12;  // One click a month
+    const clickTime  = 1/10;  // One click a month
     const h      = clickTime/nbStep;
     const hg     = h*g;
     const hgd2   = hg/2;
@@ -273,14 +322,16 @@ function Orbit(plan, html) {
     }
   }
   function newTrace() {
-    cm  = html.adm.slice();
-    cx  = html.adx.slice();
-    cy  = html.ady.slice();
-    cvx = html.advx.slice();
-    cvy = html.advy.slice();
+    cm  = html.aDef.adm.slice();
+    cx  = html.aDef.adx.slice();
+    cy  = html.aDef.ady.slice();
+    cvx = html.aDef.advx.slice();
+    cvy = html.aDef.advy.slice();
     nbP = html.getNbPla();
     html.showData();
     plan.clearCanvas();
+    plan.setScale(-2, -1.5, 2, 1.5);
+    plan.grid(8, 0.01, 6, 0.01);
   }
   for (let i=0; i<maxPlanets; i++) {
     x[i] = new Array(nbStep).fill(0);
@@ -296,9 +347,13 @@ function newTrace() {
   orbit.newTrace();
 }
 
+const cLeft   = 25;
+const cTop    = 25;
+const cWidth  = 600-cLeft;
+const cHeight = 400-cTop;
 var orbit;
 function start() {
-  const plan  = Graph(cLeft, cWidth-cLeft, cTop, cHeight-cTop);
+  const plan  = Graph("can", cLeft, cWidth-cLeft, cTop, cHeight-cTop);
   const html  = Html();
   orbit = Orbit(plan, html);
   orbit.newTrace();
