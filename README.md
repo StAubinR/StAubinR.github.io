@@ -11,8 +11,8 @@
  </li>
  <li>
  <p>OrbitNCorpsVerlet: <p>
- - https://staubinr.github.io/OrbitNCorpsVerlet/OrbitNCorpsVerlet.html
- - https://staubinr.github.io/OrbitNCorpsVerlet/OrbitNCorpsVerletELP.html
+ - <p>https://staubinr.github.io/OrbitNCorpsVerlet/OrbitNCorpsVerlet.html</p>
+ - <p>https://staubinr.github.io/OrbitNCorpsVerlet/OrbitNCorpsVerletELP.html</p>
  </li>
  <li>
  <p>Infection: <p>
