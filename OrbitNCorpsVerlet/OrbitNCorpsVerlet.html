@@ -62,6 +62,9 @@ function Graph(can, left, width, top, height) {
     bx = left - x1*mx;
     my = height/(y1-y2);
     by = top - y2*my;
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'top';
+    ctx.strokeStyle = "black";
   }
   function scaleX(x) {
     return bx+mx*x;
