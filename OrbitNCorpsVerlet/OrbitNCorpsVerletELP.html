@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<body onload="start();">
+  <h3>Orbit simulation using Verlet integration</h3>
+  <div id="pat">Orbit pattern: </div>
+  <span>N</span>
+  <input class="box" type="number" id="n"  min="2" max="9" value="3">
+  <input class="sli" type="range"  id="sn" min="2" max="9" step="1" value="3"><br>
+  <div id="data">
+    <span id="sdm">M </span><div id="dm"></div>
+    <span id="sdx">X </span><div id="dx"></div>
+    <span id="sdy">Y </span><div id="dy"></div>
+    <span id="svx">Vx</span><div id="dvx"></div>
+    <span id="svy">Vy</span><div id="dvy"></div>
+  </div>
+  <input id="new"    type="button"   value="New Trace"  onclick="newTrace()">
+  <input id="steps"  type="button" value="More Steps" onclick="moreSteps()">
+  <canvas id="can" width="600" height="400"></canvas>
+  <canvas id="eng" width="600" height="100"></canvas>
+  <canvas id="lma" width="600" height="100"></canvas>
+  <canvas id="ama" width="600" height="100"></canvas>
+</body>
+<style>
+#data>span, body>span {
+  width: 50px;
+  float: left;
+}
+input.box { width: 52px; text-align: right;}
+input.sli { width: 250px; }
+#data {
+  width: 600px;
+}
+#data>div>div,
+#data>div>input {
+  width: 56px;
+  float: left;
+  padding: 2px;
+  text-align: right;
+}
+#data>div>input {
+  padding: 0px;
+}
+#steps {
+  float: left;
+}
+#data>span, #new, #can, #data, #eng, #lma, #ama {
+  float: left;
+  clear: both;
+}
+#can, #eng, #lma, #ama  {
+  border: 1px solid;
+  display: block;
+  margin: 2px;
+}
+</style>
+<script>
+"use strict"
+function Graph(can, left, width, top, height) {
+  const canvas = document.getElementById(can);
+  const ctx    = canvas.getContext('2d');
+  var x1, y1, x2, y2, mx, my, bx, by;
+  function setScale(px1, py1, px2, py2) {
+    x1 = px1;
+    y1 = py1;
+    x2 = px2;
+    y2 = py2;
+    // f(x) = mx+b = left+(x-x1)*width/(x2-x1)
+    mx = width/(x2-x1);
+    bx = left - x1*mx;
+    my = height/(y1-y2);
+    by = top - y2*my;
+    ctx.textAlign    = 'left';
+    ctx.textBaseline = 'top';
+    ctx.strokeStyle = "black";
+  }
+  function scaleX(x) {
+    return bx+mx*x;
+  }
+  function scaleY(y) {
+    return by+my*y;
+  }
+  function line(x1, y1, x2, y2) {
+    ctx.beginPath();
+    ctx.moveTo(scaleX(x1), scaleY(y1));
+    ctx.lineTo(scaleX(x2), scaleY(y2));
+    ctx.stroke();
+  }
+  function courbeXY(x,y,c) {
+    ctx.beginPath();
+    ctx.moveTo(scaleX(x[0]), scaleY(y[0]));
+    for (let i=1; i<x.length; i++) {
+      ctx.lineTo(scaleX(x[i]), scaleY(y[i]));
+    }
+    ctx.strokeStyle = c;
+    ctx.stroke();
+  }
+  function text(t, x, y) {
+    ctx.fillText(t, scaleX(x), scaleY(y));
+  }
+  function grid(xs, ys, lSize, decX, decY){
+    line(x1, y1, x2, y1);
+    line(x1, y1, x1, y2);
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'top';
+    const ly = y1+lSize*(y2-y1);
+    for (let i=0; i<=xs; i++) {
+      const x = x1+i*(x2-x1)/xs;
+      line(x, y1, x, ly);
+      text(x.toFixed(decX), x, y1);
+    }
+    ctx.textAlign = 'end';
+    ctx.textBaseline = 'middle';
+    const lx = x1+lSize*(x2-x1);
+    for (let i=1; i<=ys; i++) {
+      const y = y1+i*(y2-y1)/ys;
+      line(x1, y, lx, y);
+      text(y.toFixed(decY)+' ', x1, y);
+    }
+  }
+  function clearCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  function avgMinMax(vect) {
+    return [vect.reduce((a,b)=>a+b,0)/vect.length,
+            Math.min(...vect), Math.max(...vect)];
+  }
+  function cpm(amm) {
+    // Give center value with max on both side 
+    return [amm[0], Math.max(amm[0]-amm[1], amm[2]-amm[0])];
+  }
+  function tcpm(title, cpm) {
+    const range = cpm.length?(" = "+cpm[0].toFixed(1)+"±"+cpm[1].toFixed(10)):"";
+    return title+range;
+  }
+  function drawMotion(title, x, y) {
+    clearCanvas();
+    setScale(0, 0, x.length, 1);
+    const acpm = y.length?cpm(avgMinMax(y)):[];
+    text(tcpm(title, acpm), x.length/10, 1);
+    setScale(0, acpm[0]-acpm[1], x.length, acpm[0]+acpm[1]); 
+    grid(4, 0, 0.05, 0, 0);
+    courbeXY(x, y, "black");
+  }
+  return {clearCanvas, courbeXY, setScale, grid, drawMotion};
+}
+
+function Html() {
+  const dpa = document.getElementById('pat');
+  const dm  = document.getElementById('dm');
+  const dx  = document.getElementById('dx');
+  const dy  = document.getElementById('dy');
+  const dvx = document.getElementById('dvx');
+  const dvy = document.getElementById('dvy');
+  const nIn = document.getElementById('n');
+  const nSl = document.getElementById('sn');
+  const aDef = {};
+  const maxPlanets = 10;
+  const dpi  = 2*Math.PI;
+  const dpio = 2*3.1;
+  const pvx  = -0.93240737*dpi;
+  const pvy  = -0.86473146*dpi;
+  const pvxo = -0.93240737*dpio;
+  const pvyo = -0.86473146*dpio;
+  const px   =  0.97000436;
+  const py   = -0.24308753;
+  const pats = {"Flowers": {
+                  "adm": [ 1, 1, 1],
+                  "adx": [-1, 1, 0],
+                  "ady": [ 0, 0, 1],
+                  "advx":[ 0, 0, 1],
+                  "advy":[-1, 1, 0]
+                },
+                "Euler Figure-8 Stable": {
+                  "adm": [ 1, 1, 1],
+                  "adx": [px, -px, 0],
+                  "ady": [py, -py, 0],
+                  "advx":[ -pvx/2, -pvx/2, pvx],
+                  "advy":[ -pvy/2, -pvy/2, pvy]
+                },
+                "Euler Figure-8 Unstable": {
+                  "adm": [ 1, 1, 1],
+                  "adx": [px, -px, 0],
+                  "ady": [py, -py, 0],
+                  "advx":[ -pvxo/2, -pvxo/2, pvxo],
+                  "advy":[ -pvyo/2, -pvyo/2, pvyo]
+                }
+  }
+  function slider(sObj, iObj) {
+    sObj.oninput = function() {
+      iObj.value = sObj.value;
+    };
+    sObj.onmouseup = function() {
+      iObj.value = sObj.value;
+      showData();
+    };
+    iObj.onchange = function() {
+      sObj.value = iObj.value;
+      showData();
+    }
+  }
+  function addElem(parent, type, text, ind, value) {
+    const oNode = document.createElement(type);
+    const tNode = document.createTextNode(text);
+    oNode.appendChild(tNode);
+    oNode.cellIndex = ind;
+    if (type === 'INPUT') {
+      oNode.type = 'number';
+      if (value !== undefined) {
+        oNode.value = value;
+      }
+    }
+    parent.appendChild(oNode);
+    return oNode;
+  }
+  function getNbPla() {
+    var n = Number(nIn.value);
+    while (aDef.adm[n-1] === 0) {
+      n--;
+    }
+    if (n!==Number(nIn.value)) {
+      nIn.value = n;
+      nSl.value = n;
+      showData();
+    }
+    return n;
+  }
+  function showData() {
+    const n = Number(nIn.value);
+    dm.innerHTML = '';
+    dx.innerHTML = '';
+    dy.innerHTML = '';
+    dvx.innerHTML = '';
+    dvy.innerHTML = '';
+    for (let i=0; i<n; i++) {
+      addElem(dm,  'INPUT', '', i, aDef.adm[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.adm[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dx,  'INPUT', '', i, aDef.adx[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.adx[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dy,  'INPUT', '', i, aDef.ady[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.ady[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dvx, 'INPUT', '', i, aDef.advx[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.advx[ev.target.cellIndex] = Number(ev.target.value);});
+      addElem(dvy, 'INPUT', '', i, aDef.advy[i].toFixed(1)).addEventListener("change", 
+        (ev)=>{aDef.advy[ev.target.cellIndex] = Number(ev.target.value);})
+    }
+  }
+  function copObj(to, from) {
+    const zeroArray = new Array(maxPlanets-from.adm.length).fill(0);
+    for (let index in from) {
+      to[index] = from[index].concat(zeroArray);
+    }
+  }
+  function defVal(ev) {
+    const et   = ev.target;
+    const name = et.options[et.selectedIndex].text;
+    const cPat = pats[name];
+    copObj(aDef, cPat);
+    nIn.value = cPat.adm.length;
+    nSl.value = cPat.adm.length;
+    newTrace();
+  }
+  function crSelect(parent, names) {
+    const select = document.createElement("select");
+    select.id = "patSel";
+    for (let index in names) {
+      const option = document.createElement("option");
+      option.value = index;
+      option.text  = index;
+      select.appendChild(option);
+    }
+    parent.appendChild(select);
+    select.addEventListener("change", defVal);
+  }
+  crSelect(dpa, pats);
+  copObj(aDef, pats["Flowers"]);
+  slider(nSl, nIn, aDef);
+  return {showData, slider, getNbPla, aDef, maxPlanets};
+}
+
+function Orbit(plan, eng, lma, ama, html) {
+  const nbStep     = 1000;
+  const vSteps     = [...Array(nbStep).keys()];
+  const maxPlanets = html.maxPlanets;
+  const g = 4*Math.pow(Math.PI,2);
+  // g unit is: Time is years, unit masse is the sun,
+  //            and distance is sun earth (UA)
+  const x  = new Array(maxPlanets);
+  const y  = new Array(maxPlanets);
+  const vx = new Array(maxPlanets);
+  const vy = new Array(maxPlanets);
+  var  nbP = html.getNbPla();
+  var cm, cx, cy, cvx, cvy;
+  function square(x) {
+    return x*x;
+  }
+  function dist(x1, y1, x2, y2) {
+    return Math.sqrt(square(x1-x2)+square(y1-y2));
+  }
+  function elp(nbP, m, x, y, vx, vy) {
+    const nbS = x[0].length;
+    var en  = new Array(nbS).fill(0);
+    var env = new Array(nbS).fill(0);
+    var eng = new Array(nbS).fill(0);
+    var am  = new Array(nbS).fill(0);
+    var lmx = new Array(nbS).fill(0);
+    var lmy = new Array(nbS).fill(0);
+    for (let s=0; s<nbS; s++) {
+      for (let p=0; p<nbP; p++) {
+        env[s] += m[p]*(vx[p][s]*vx[p][s]+vy[p][s]*vy[p][s]);
+        am[s]  += m[p]*(x[p][s]*vy[p][s]-y[p][s]*vx[p][s]);
+        lmx[s] += m[p]*vx[p][s];
+        lmy[s] += m[p]*vy[p][s];
+        for (let j=p+1; j<nbP; j++) {
+          eng[s] += m[p]*m[j]/dist(x[p][s], y[p][s], x[j][s], y[j][s]);
+        }
+      }
+      en[s] = 0.5*env[s] - g*eng[s];
+    }
+    return [en, lmx, lmy, am];
+  }
+  function drawAllMotions(eng, lma, ama, elp) {
+    eng.drawMotion("Energy = ½∑(mi|vi|²) - g∑(mi x mj/(ri-rj))", vSteps, elp[0]);
+    lma.drawMotion("Linear Momentum = |∑(mi(ri x vi))|", vSteps, elp[1]);
+    ama.drawMotion("Phase Momentum = ∑(mi vi)", vSteps, elp[2]);
+  }
+  // Algorithm:  S = integration
+  //  F = m a; S(Fxj) = m*S(axj) = m g S(mj (xj-x)/r^3)
+  //     r^2 = (xj-x)^2 + (yj-y)^2
+  //  axj = S(axj) = g S(mj (xj-x)/r^3);
+  function an(n, m, x, y) {
+    const ax = new Array(n).fill(0);
+    const ay = new Array(n).fill(0);
+    for (let i=0; i<n; i++) {
+      for (let j=i+1; j<n; j++) {
+        const difX  = x[j]-x[i];
+        const difY  = y[j]-y[i];
+        const dist15  = Math.pow(square(difX)+square(difY), 1.5);
+        const fx = difX/dist15
+        const fy = difY/dist15
+        ax[i] += m[j]*fx;
+        ay[i] += m[j]*fy;
+        ax[j] -= m[i]*fx;
+        ay[j] -= m[i]*fy;
+      }
+    }
+    return [ax, ay];
+  }
+  // Algo
+  // 1) Initialisation du pas h et de la durée T.
+  // 2) Initialisation des conditions initiales : t=0, r=r0 et v=v0.
+  // 3) Définition de la fonction a(r).
+  // 4) Tant que t≤T faire :
+  //    1) Calcul de a(t)=fa(r(t))
+  //    2) Nouvelle position : r(t+h)=r(t)+h*v(t)+h*h*a(t)/2.
+  //    3) Calcul de a(t+h)=fa(r(t+h)).
+  //    4) Nouvelle vitesse : v(t+h)=v(t)+h(a(t)+a(t+h))/2
+  //    5) t=t+h.
+  //    6) Enregistrement des données
+  function comp() {
+    const clickTime  = 1/10;  // One click a month
+    const h      = clickTime/nbStep;
+    const hg     = h*g;
+    const hgd2   = hg/2;
+    const h2     = h*h;
+    const h2gd2  = h2*g/2;
+    var   axy0, axy1;
+    for (let i=0; i<nbP; i++) {
+      plan.courbeXY(x[i],y[i],'white');
+    }
+    for (let i=0; i<nbP; i++) {
+      x[i][0]  = cx[i];
+      y[i][0]  = cy[i];
+      vx[i][0] = cvx[i];
+      vy[i][0] = cvy[i];
+    }
+    axy0 = an(nbP, cm, cx, cy);
+    for (let s=1; s<nbStep; s++) {
+      for (let i=0; i<nbP; i++) {
+        cx[i]  += h*cvx[i] + h2gd2*axy0[0][i];
+        x[i][s]  = cx[i];
+        cy[i]  += h*cvy[i] + h2gd2*axy0[1][i];
+        y[i][s]  = cy[i];
+      }
+      axy1 = an(nbP, cm, cx, cy);
+      for (let i=0; i<nbP; i++) {
+        cvx[i] += hgd2*(axy0[0][i]+axy1[0][i]);
+        vx[i][s] = cvx[i];
+        cvy[i] += hgd2*(axy0[1][i]+axy1[1][i]);
+        vy[i][s] = cvy[i];
+      }
+      axy0 = axy1;
+    }
+    for (let i=0; i<nbP; i++) {
+      plan.courbeXY(x[i],y[i], 'black');
+    }
+    drawAllMotions(eng, lma, ama, elp(nbP, cm, x, y, vx, vy));
+  }
+  function newTrace() {
+    cm  = html.aDef.adm.slice();
+    cx  = html.aDef.adx.slice();
+    cy  = html.aDef.ady.slice();
+    cvx = html.aDef.advx.slice();
+    cvy = html.aDef.advy.slice();
+    nbP = html.getNbPla();
+    html.showData();
+    plan.clearCanvas();
+    plan.setScale(-2, -1.5, 2, 1.5);
+    plan.grid(8, 6, 0.01, 1, 1);
+    drawAllMotions(eng, lma, ama, [[], [], []])
+  }
+  for (let i=0; i<maxPlanets; i++) {
+    x[i]  = new Array(nbStep).fill(0);
+    y[i]  = new Array(nbStep).fill(0);
+    vx[i] = new Array(nbStep).fill(0);
+    vy[i] = new Array(nbStep).fill(0);
+  }
+  return {newTrace, comp}
+}
+
+function moreSteps() {
+  orbit.comp();
+}
+function newTrace() {
+  orbit.newTrace();
+}
+
+const cLeft   = 25;
+const cTop    = 25;
+const cWidth  = 600-cLeft;
+const cHeight = 400-cTop;
+const cSmTop  = 10;
+const cSmHeight = 100-cSmTop;
+var orbit;
+function start() {
+  const plan  = Graph("can", cLeft, cWidth-cLeft, cTop, cHeight-cTop);
+  const eng   = Graph("eng", cLeft, cWidth-cLeft, cSmTop, cSmHeight-cSmTop);
+  const lma   = Graph("lma", cLeft, cWidth-cLeft, cSmTop, cSmHeight-cSmTop);
+  const ama   = Graph("ama", cLeft, cWidth-cLeft, cSmTop, cSmHeight-cSmTop);
+  const html  = Html();
+  orbit = Orbit(plan, eng, lma, ama, html);
+  orbit.newTrace();
+}
+</script>
+</html>
