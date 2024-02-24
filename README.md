@@ -12,6 +12,7 @@
  <li>
  <p>OrbitNCorpsVerlet: <p>
  - https://staubinr.github.io/OrbitNCorpsVerlet/OrbitNCorpsVerlet.html
+ - https://staubinr.github.io/OrbitNCorpsVerlet/OrbitNCorpsVerletELP.html
  </li>
  <li>
  <p>Infection: <p>
