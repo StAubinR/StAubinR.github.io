@@ -304,6 +304,7 @@ function Orbit(plan, eng, lma, ama, html) {
     var am  = new Array(nbS).fill(0);
     var lmx = new Array(nbS).fill(0);
     var lmy = new Array(nbS).fill(0);
+    var lm  = new Array(nbS).fill(0);
     for (let s=0; s<nbS; s++) {
       for (let p=0; p<nbP; p++) {
         env[s] += m[p]*(vx[p][s]*vx[p][s]+vy[p][s]*vy[p][s]);
@@ -315,13 +316,14 @@ function Orbit(plan, eng, lma, ama, html) {
         }
       }
       en[s] = 0.5*env[s] - g*eng[s];
+      lm[s] = Math.sqrt(lmx[s]*lmx[s]+lmy[s]*lmy[s]);
     }
-    return [en, lmx, lmy, am];
+    return [en, lm, am];
   }
   function drawAllMotions(eng, lma, ama, elp) {
     eng.drawMotion("Energy = ½∑(mi|vi|²) - g∑(mi x mj/(ri-rj))", vSteps, elp[0]);
-    lma.drawMotion("Linear Momentum = |∑(mi(ri x vi))|", vSteps, elp[1]);
-    ama.drawMotion("Phase Momentum = ∑(mi vi)", vSteps, elp[2]);
+    lma.drawMotion("Linear Momentum = ∑(mi vi)", vSteps, elp[1]);
+    ama.drawMotion("Phase Momentum = |∑(mi(ri x vi))|", vSteps, elp[2]);
   }
   // Algorithm:  S = integration
   //  F = m a; S(Fxj) = m*S(axj) = m g S(mj (xj-x)/r^3)
