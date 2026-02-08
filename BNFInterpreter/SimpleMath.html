@@ -1,0 +1,104 @@
+<title>:: My Own Interpreter ::</title> 
+<script src="NBFInterpreter.js"></script>
+<body onload="start()">
+  <pre   id="bnfID"></pre>
+  <input id="inEquID" type="text" size="80" placeholder="Enter your equation">
+  <button id="genButID" type="button" onclick="logic.genEqua()">Generate</button>
+  <button id="compButID" type="button" onclick="logic.compute()">Compute</button>
+  <pre   id="shEqID"></pre>
+  <pre   id="rslEqID"></pre>
+</body>
+<script>
+const bnf = {};
+const or  = "|";
+bnf["number"]     = [ /^(\d+(\.\d*)?)/, (a)=>Number.parseFloat(a)];
+bnf["immediate"]  = ["parcond", or, "number"];
+bnf["factor"]     = [/^[+-]/, "immediate",          (op,a)=>op==="+"?a:-a,      or, "immediate"];
+bnf["term"]       = ["factor", /^[*/]/, "term",     (a,op,b)=>op==="*"?a*b:a/b, or, "factor"];
+bnf["expression"] = ["term", /^[+-]/, "expression", (a,op,b)=>op==="+"?a+b:a-b, or, "term"];
+bnf["parcond"]    = [/^\(/, "expression", /^\)/,    (lp,a,rp)=>a];
+
+function HTML() {
+  const isOprNode = (node)=>Array.isArray(node) && typeof node[0] === "function";
+  function showBNF(bnf) {
+    bnfID.innerHTML = "";
+    const ruleNames = Object.keys(bnf);
+    const maxLen   = Math.max(...ruleNames.map(str=>str.length));
+    for (const ruleName of ruleNames) {
+      const prm = bnf[ruleName];
+      bnfID.innerHTML += ruleName.padEnd(maxLen+1)+" ::= ";
+      let str = "";
+      for (let ip=0; ip<prm.length; ip++) {
+        const onePrm = prm[ip];
+        if (typeof onePrm === "string") {
+          str += " "+((onePrm==="|")?"OR":onePrm)+" ";
+        } else if (typeof onePrm === "function" || onePrm instanceof RegExp) {
+          str += " "+onePrm.toString()+" ";
+        }
+      }
+      bnfID.innerHTML += str+"<br>";
+    }
+  }
+  function showTree(tree) {
+    let mathStr = "";
+    if (isOprNode(tree)) {
+      for (let iPrm=1; iPrm<tree.length; iPrm++) {
+        let prm = tree[iPrm];
+        if (isOprNode(prm)) {
+          let str = showTree(prm);
+          if (prm.length>2 && prm[1]!=="(" && tree[1]!="(") {
+            str = "["+str+"]"
+          }
+          mathStr += str;
+        } else if (typeof prm === "string") {
+          mathStr += prm;
+        } else {
+          console.log("No idea why I'm here");
+        }
+      }
+    }
+    return mathStr;
+  }
+  function show2Lines(tree) {
+    const str = showTree(tree);
+    let   tLine = str.replaceAll("[", " ");
+          tLine = tLine.replaceAll("]", " ");
+    shEqID.innerHTML = "From: "+tLine+"\n"+"To:   "+str;
+  }
+  return {showBNF, showTree, show2Lines};
+}
+
+function LOGIC(pBNF, html) {
+  function compute() {
+    const src  = SRC(inEquID.value);
+    let tree  = pBNF.buildTree(src, "expression");
+    tree = pBNF.reBalance(tree);
+    html.show2Lines(tree);
+    if (!src.checkError()) {
+      const intRsl = pBNF.evalTree(tree);
+      const jsRsl  = eval(src.getSrc());
+      rslEqID.innerHTML = (intRsl===jsRsl?"You WIN!!":"NOT THE SAME RESULT!!")+
+         " Interpreter: "+intRsl+" Javascript: "+jsRsl;
+    }
+  }
+  function genEqua() {
+    let maxTry = 10;
+    let strEq = "";
+    while (maxTry>0 && strEq.length<20) {
+      strEq = pBNF.genEqua(10, "expression");
+    }    
+    inEquID.value = strEq;
+  }
+  return {compute, genEqua};
+}
+const pBNF  = BNF(bnf);
+const html  = HTML();
+const logic = LOGIC(pBNF, html);
+
+function start() {
+  inEquID.value = "100/-(10-20-20+20)/-(5*2/2*2/2)*-(-(10/5/2)-3)";
+  html.showBNF(bnf);
+  console.log("Started");
+  console.log(pBNF.genEqua(10,"expression"));
+}
+</script>
