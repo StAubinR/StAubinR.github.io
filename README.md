@@ -27,7 +27,13 @@
  - https://staubinr.github.io/Wolfenstein3D/Wolf3DV1.html
  </li>
  <li>
+<<<<<<< HEAD
  <p>Nana Interpreter using BNF: <p>
  - https://staubinr.github.io/BNFInterpreter/SimpleMath.html
+=======
+ <p>Nano Interpreter using BNF: <p>
+ <p>- https://staubinr.github.io/BNFInterpreter/SimpleMath.html</p>
+ <p>- https://staubinr.github.io/BNFInterpreter/MathWithLogic.html</p>
+>>>>>>> 5eccc0a2663d44180805f76df31962538a00007d
  </li>
 </ul>
