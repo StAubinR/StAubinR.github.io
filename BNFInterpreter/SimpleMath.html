@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <title>:: My Own Interpreter ::</title> 
 <script src="BNFInterpreter.js"></script>
 <body onload="start()">
@@ -66,4 +67,74 @@ function start() {
   console.log("Started");
   console.log(pBNF.genEqua(10,"expression"));
 }
+=======
+<title>:: My Own Interpreter ::</title> 
+<script src="BNFInterpreter.js"></script>
+<body onload="start()">
+  <pre   id="bnfID"></pre>
+  <input id="inEquID" type="text" size="80" placeholder="Enter your equation">
+  <button id="genButID" type="button" onclick="logic.genEqua()">Generate</button>
+  <button id="compButID" type="button" onclick="logic.compute()">Compute</button>
+  <pre   id="shEqID"></pre>
+  <pre   id="rslEqID"></pre>
+</body>
+<script>
+const bnf = {};
+const or  = "|";
+bnf["number"]     = [ /^(\d+(\.\d*)?)/, (a)=>Number.parseFloat(a)];
+bnf["immediate"]  = ["parcond", or, "number"];
+bnf["factor"]     = [/^(\+|\-)/, "immediate",          (op,a)=>op==="+"?a:-a,      or, "immediate"];
+bnf["term"]       = ["factor", /^(\*|\/)/, "term",     (a,op,b)=>op==="*"?a*b:a/b, or, "factor"];
+bnf["expression"] = ["term", /^(\+|\-)/, "expression", (a,op,b)=>op==="+"?a+b:a-b, or, "term"];
+bnf["parcond"]    = [/^\(/, "expression", /^\)/,       (lp,a,rp)=>a];
+
+function HTML() {
+  function showBNF(bnfStr) {
+    bnfID.innerHTML = bnfStr;
+  }
+  function show2Lines(str) {
+    let   tLine = str.replaceAll("[", " ").replaceAll("]", " ");
+    shEqID.innerHTML = "From: "+tLine+"\n"+"To:   "+str;
+  }
+  return {showBNF, show2Lines};
+}
+
+function LOGIC(pBNF, html) {
+  function compute() {
+    const src  = SRC(inEquID.value);
+    let tree  = pBNF.buildTree(src, "expression");
+    tree = pBNF.reBalance(tree);
+    const errMsg = src.checkError();
+    if (errMsg) {
+      shEqID.innerHTML = "";
+      rslEqID.innerHTML = "Error stop at: "+errMsg;
+    } else {
+      html.show2Lines(pBNF.treeToString(tree));
+      const intRsl = pBNF.evalTree(tree);
+      const jsRsl  = eval(src.getSrc());
+      rslEqID.innerHTML = (intRsl===jsRsl?"You WIN!!":"NOT THE SAME RESULT!!")+
+         " Interpreter: "+intRsl+" Javascript: "+jsRsl;
+    }
+  }
+  function genEqua() {
+    let maxTry = 10;
+    let strEq = "";
+    while (maxTry>0 && strEq.length<20) {
+      strEq = pBNF.genEqua(10, "expression");
+    }    
+    inEquID.value = strEq;
+  }
+  return {compute, genEqua};
+}
+const pBNF  = BNF(bnf);
+const html  = HTML();
+const logic = LOGIC(pBNF, html);
+
+function start() {
+  inEquID.value = "100/-(10-20-20+20)/-(5*2/2*2/2)*-(-(10/5/2)-3)";
+  html.showBNF(pBNF.bnfToString());
+  console.log("Started");
+  console.log(pBNF.genEqua(10,"expression"));
+}
+>>>>>>> a8e53075a32eefbcc49853f32f2e9ba272a615af
 </script>
