@@ -1,0 +1,80 @@
+<title>:: My Own Interpreter ::</title> 
+<script src="BNFInterpreter.js"></script>
+<body onload="start()">
+  <pre   id="bnfID"></pre>
+  <input id="inEquID" type="text" size="80" placeholder="Enter your equation">
+  <button id="genButID" type="button" onclick="logic.genEqua()">Generate</button>
+  <button id="compButID" type="button" onclick="logic.compute()">Compute</button>
+  <pre   id="shEqID"></pre>
+  <pre   id="rslEqID"></pre>
+</body>
+<script>
+const bnf = {};
+const or  = "|";
+bnf["number"]      = [ /^(\d+(\.\d*)?)/, (a)=>Number.parseFloat(a)];
+bnf["parexp"]      = [/^\(/, "expression", /^\)/, (lp,a,rp)=>a];
+bnf["immediate"]   = ["parexp", or, "number"];
+bnf["factor"]      = [/^(\+|\-)/, "immediate", (op,a)=>op==="+"?a:-a, or, "immediate"];
+bnf["term"]        = ["factor", /^(\*|\/)/, "term", (a,op,b)=>op==="*"?a*b:a/b, or, "factor"];
+bnf["expression"]  = ["term",   /^(\+|\-)/, "expression", (a,op,b)=>op==="+"?a+b:a-b, or, "term"];
+bnf["boolean"]     = [/^(true|false)/,   (a)=>a=="true"];
+bnf["parcond"]     = [/^\(/, "logicor", /^\)/, (lp,a,rp)=>a];
+bnf["logicimm"]    = ["parcond", or, "boolean"];
+bnf["relation"]    = ["expression", /^(<=|>=|<|>)/, "expression",
+                      (a,op,b)=>op=="<="?a<=b:op==">="?a>=b:op=="<"?a<b:a>b, or, "logicimm"];
+bnf["equality"]    = ["expression",   /^(==|!=)/, "expression", (a,op,b)=>op==="=="?a===b:a!==b, or, "relation"];
+bnf["logicand"]    = ["equality",   /^&&/,    "logicand",  (a,op,b)=>a&&b, or, "equality"];
+bnf["logicor"]     = ["logicand", /^\|\|/,    "logicor",  (a,op,b)=>a||b, or, "logicand"];
+bnf["parcond"]     = [/^\(/, "logicor", /^\)/, (lp, a, rp) => a];
+bnf["start"]       = ["logicor", or, "expression"]
+
+function HTML() {
+  function showBNF(bnfStr) {
+    bnfID.textContent  = bnfStr;
+  }
+  function show2Lines(str) {
+    let   tLine = str.replaceAll("[", " ");
+          tLine = tLine.replaceAll("]", " ");
+    shEqID.textContent = "From: "+tLine+"\n"+"To:   "+str;
+  }
+  return {showBNF, show2Lines};
+}
+
+function LOGIC(pBNF, html) {
+  function compute() {
+    const src  = SRC(inEquID.value);
+    let tree  = pBNF.buildTree(src, "start");
+    tree = pBNF.reBalance(tree);
+    const errMsg = src.checkError();
+    if (errMsg) {
+      shEqID.textContent = "";
+      rslEqID.textContent = "Error stop at: "+errMsg;
+    } else {
+      html.show2Lines(pBNF.treeToString(tree));
+      const intRsl = pBNF.evalTree(tree);
+      const jsRsl  = eval(src.getSrc());
+      rslEqID.textContent = (intRsl===jsRsl?"You WIN!!":"NOT THE SAME RESULT!!")+
+         " Interpreter: "+intRsl+" Javascript: "+jsRsl;
+    } 
+  }
+  function genEqua() {
+    let maxTry = 10;
+    let strEq = "";
+    while (maxTry>0 && strEq.length<20) {
+      strEq = pBNF.genEqua(10, "start");
+    }    
+    inEquID.value = strEq;
+  }
+  return {compute, genEqua};
+}
+const pBNF  = BNF(bnf);
+const html  = HTML();
+const logic = LOGIC(pBNF, html);
+
+function start() {
+  //inEquID.value = "100/-(10-20-20+20)/-(5*2/2*2/2)*-(-(10/5/2)-3)";
+  inEquID.value = "100/-(10-20)/-(5*2)*-(-(10/5)-3)"
+  html.showBNF(pBNF.bnfToString());
+  console.log("Started");
+}
+</script>
