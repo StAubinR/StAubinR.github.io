@@ -29,6 +29,6 @@
  <li>
  <p>Nano Interpreter using BNF: <p>
  <p>- https://staubinr.github.io/BNFInterpreter/SimpleMath.html</p>
- <p>- https://staubinr.github.io//BNFInterpreter/MathWithLogic.html</p>
+ <p>- https://staubinr.github.io/BNFInterpreter/MathWithLogic.html</p>
  </li>
 </ul>
