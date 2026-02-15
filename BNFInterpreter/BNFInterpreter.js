@@ -1,4 +1,4 @@
-// Module to read input text (source code)
+ // Module to read input text (source code)
 function SRC(text) {
   const getPos = () =>cPos;
   const setPos = (p)=>cPos=p;
