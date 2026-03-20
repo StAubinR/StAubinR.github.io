@@ -1,0 +1,120 @@
+<title>:: My Own Interpreter ::</title>
+<script type="module" src="JSLikeBNF.js"></script>
+<script type="module" src="BNFNanoInt.js"></script>
+<script type="module src="TestInt.js"></script>
+<body>
+  <pre   id="bnfID"></pre>
+  <div id="testEqDivID"></div>
+  <textarea id="inEquID" type="text" rows="2" cols="80" placeholder="Enter your equation"></textarea>
+  <!--button   id="genButID" type="button">Generate</button-->
+  <button   id="compButID" type="button">Compute</button>
+  <pre      id="shEqID"></pre>
+  <pre      id="rslEqID"></pre>
+  <pre      id="msgID"></pre>
+</body>
+<script  type="module">
+"use strict";
+import BNF from "./JSLikeBNF.js";
+import TestInt from "./TestInt.js";
+import {SRC, NANOINT} from "./BNFNanoInt.js";
+
+// Module to interface with HTML code
+function HTML() {
+  const setToRsl = (text)=>rslEqID.innerHTML  = text;
+  const addToRsl = (text)=>rslEqID.innerHTML += text;
+  const setToSEq = (text)=>shEqID.innerHTML  = text;
+  const addToSEq = (text)=>shEqID.innerHTML += text;
+  const showBNF  = (bnfStr)=>bnfID.innerHTML = bnfStr;
+  const adjInEQ  = ()=>inEquID.setAttribute("rows", inEquID.value.split("\n").length);
+  function show2Lines(str) {
+    let   tLine = str.replaceAll("[", " ").replaceAll("]", " ");
+    setToSEq("From: "+tLine+"\n"+"To:   "+str);
+  }
+  function createTest(testEqDivID, options) {
+    const selectList = document.createElement("select");
+    selectList.id = "TestIntSelID";
+    selectList.name = "TestInt";
+    testEqDivID.appendChild(selectList);
+    for (let i = 0; i < options.length; i++) {
+      const option = document.createElement("option");
+      option.value = options[i][1];  // Set the value attribute
+      option.text  = options[i][0];  // Set the visible text
+      selectList.appendChild(option); 
+    }
+    testEqDivID.addEventListener('change',
+      ()=>{inEquID.value = selectList.options[selectList.selectedIndex].value;adjInEQ()});
+  }
+  createTest(testEqDivID, TestInt());
+  inEquID.addEventListener("keyup",adjInEQ);
+  inEquID.value = "var c=10;{let c=0};c";
+  return {showBNF, show2Lines, setToRsl, addToRsl, setToSEq, addToSEq};
+}
+
+// Module to interface with other modules.
+// Mostly the logic of this program
+function LOGIC(nanoInt, html) {
+  const consoleLog = (a)=>{console.log(a);return a} // For JS eval
+  const setIDHtml  = (n,v)=>document.getElementById(n).innerHTML  = v;
+  const addIDHtml  = (n,v)=>document.getElementById(n).innerHTML += v;
+  function compute() {
+    const src = SRC(inEquID.value);
+    let tree   = nanoInt.buildTree(src, "start");
+    let errMsg = src.checkError();
+    html.setToRsl("");
+    html.setToSEq("");
+    if (errMsg) {
+      html.addToRsl("Error stop at: "+errMsg);
+    } else {
+      tree = nanoInt.reBalance(tree, ["+-", "*/"]);
+      tree = nanoInt.optTree(tree, ["number","boolean","string","comment"]);
+      html.show2Lines(nanoInt.treeToString(tree));
+      html.addToSEq("\rBuild Tree: "+nanoInt.getSta());
+      let nanoRsl, jsRsl, jsTime;
+      let nanoMsg = "";
+      let jsMsg   = "";
+      try {
+        nanoRsl = nanoInt.evalTree(tree,0);
+      } catch (e) {
+        if (e.type !== "nano") throw e;
+        nanoMsg = "Nano error: " + e.value;
+      }
+      if (!nanoMsg) {
+        try {
+          const procTime = performance.now();
+          jsRsl  = eval(src.getSrc());
+          jsTime = Math.floor(performance.now()-procTime)+"ms";
+        } catch (e) {
+          jsMsg = "JS fail with "+e.message;
+        }
+      }
+      if (nanoMsg) {
+        html.addToRsl("\r "+nanoMsg);
+      } else {
+        html.addToRsl("Nano Interpreter result: "+nanoRsl);
+        html.addToRsl("\rNano execution statistics: "+nanoInt.getSta());
+        if (jsMsg) {
+          html.addToRsl("\r "+jsMsg);
+        } else {
+          html.addToRsl(nanoRsl===jsRsl?"\rYou WIN!! Nano and JS are the same":"\rNOT THE SAME RESULT!!");
+          html.addToRsl("\rJavascript result: "+jsRsl);
+          html.addToRsl("\rJavascript execution time: "+jsTime);
+        }
+      }
+    }
+  }
+  return {compute};
+}
+
+// Main start here
+function start() {
+  const nanoInt = NANOINT();
+  const html    = HTML();
+  const logic   = LOGIC(nanoInt, html);
+  const bnf     = BNF(nanoInt.evalTree);
+  nanoInt.setBNF(bnf);
+  html.showBNF(nanoInt.bnfToString());
+  compButID.addEventListener("click",logic.compute);
+  console.log("Started");
+}
+start();
+</script>

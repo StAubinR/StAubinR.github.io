@@ -1,6 +1,6 @@
- <title>:: My Own Interpreter ::</title> 
+ <title>:: Nano Interpreter ::</title> 
 <script src="BNFInterpreter.js"></script>
-<body onload="start()">
+<body onload="start()"> 
   <pre   id="bnfID"></pre>
   <input id="inEquID" type="text" size="80" placeholder="Enter your equation">
   <button id="genButID" type="button" onclick="logic.genEqua()">Generate</button>
@@ -9,7 +9,7 @@
   <pre   id="rslEqID"></pre>
 </body>
 <script>
-const bnf = {};
+const bnf = {}; 
 const or  = "|";
 bnf["number"]      = [ /^(\d+(\.\d*)?)/, (a)=>Number.parseFloat(a)];
 bnf["parexp"]      = [/^\(/, "expression", /^\)/, (lp,a,rp)=>a];
